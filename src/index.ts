@@ -25,10 +25,10 @@ async function main() {
 
     // Step 4: Build a sample prompt
     const sampleCode = `
-function getUserData(userId) {
-  const user = db.query("SELECT * FROM users WHERE id = " + userId);
-  return user;
-}
+      function getUserData(userId) {
+        const user = db.query("SELECT * FROM users WHERE id = " + userId);
+        return user;
+      }
     `.trim();
 
     console.log('🔨 Building analysis prompt for sample code...');

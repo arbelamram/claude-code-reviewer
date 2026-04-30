@@ -1,5 +1,5 @@
-import { GitHubService } from './github/github-service.js';
-import { GitHubConfigManager } from './github/github-config.js';
+import { GitHubService } from '../github/github-service.js';
+import { GitHubConfigManager } from '../github/github-config.js';
 
 async function testGitHubService() {
   console.log('🧪 Testing GitHub Service Connection\n');

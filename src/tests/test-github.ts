@@ -1,4 +1,4 @@
-import { GitHubConfigManager } from './github/github-config.js';
+import { GitHubConfigManager } from '../github/github-config.js';
 
 async function testGitHubConfig() {
   console.log('🧪 Testing GitHub Configuration\n');
@@ -8,7 +8,7 @@ async function testGitHubConfig() {
     const configManager = new GitHubConfigManager();
     console.log('✅ Configuration loaded\n');
 
-    const config = configManager.getConfig();
+  const config = configManager.getConfig();
     console.log('GitHub Configuration:');
     console.log(`  Token: ${config.token ? '✅ Set (hidden)' : '❌ Not set'}`);
     console.log(`  Owner: ${config.owner || '⚠️  Not set'}`);
