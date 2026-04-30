@@ -1,4 +1,4 @@
-import { GitHubConfigManager } from './github/github-config';
+import { GitHubConfigManager } from './github/github-config.js';
 
 async function testGitHubConfig() {
   console.log('🧪 Testing GitHub Configuration\n');

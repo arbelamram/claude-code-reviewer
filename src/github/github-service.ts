@@ -1,4 +1,5 @@
 import { Octokit } from '@octokit/rest';
+import fetch from 'node-fetch';
 
 interface PRDiff {
   fileName: string;
@@ -33,6 +34,9 @@ class GitHubService {
     this.token = githubToken;
     this.octokit = new Octokit({
       auth: githubToken,
+      request: {
+        fetch: fetch as any,
+      },
     });
   }
 
