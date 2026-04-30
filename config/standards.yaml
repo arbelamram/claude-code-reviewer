@@ -1,0 +1,150 @@
+# Claude Code Reviewer Standards Configuration
+# Define coding standards and rules to enforce
+
+security:
+  enabled: true
+  rules:
+    - check_sql_injection: true
+      description: "Detect SQL injection vulnerabilities"
+      severity: high
+    
+    - check_hardcoded_secrets: true
+      description: "Find hardcoded API keys, passwords, tokens"
+      severity: high
+    
+    - check_unsafe_deserialization: true
+      description: "Flag eval(), pickle, or unsafe deserialization"
+      severity: high
+    
+    - check_authentication: true
+      description: "Verify proper authentication checks"
+      severity: high
+    
+    - check_xss_vulnerabilities: true
+      description: "Detect XSS vulnerabilities in web code"
+      severity: high
+    
+    - check_input_validation: true
+      description: "Ensure user input is validated"
+      severity: medium
+
+performance:
+  enabled: true
+  rules:
+    - check_n_plus_one_queries: true
+      description: "Detect N+1 database query patterns"
+      severity: medium
+    
+    - check_inefficient_loops: true
+      description: "Flag O(n²) or worse algorithms"
+      severity: medium
+      config:
+        max_nested_depth: 3
+    
+    - suggest_caching: true
+      description: "Suggest caching opportunities"
+      severity: low
+    
+    - check_memory_leaks: true
+      description: "Detect potential memory leaks"
+      severity: medium
+    
+    - check_unnecessary_operations: true
+      description: "Flag redundant or wasteful operations"
+      severity: low
+
+style:
+  enabled: true
+  rules:
+    - enforce_naming_conventions: true
+      description: "Check variable/function naming (camelCase, snake_case, etc.)"
+      severity: low
+      config:
+        prefer_style: "camelCase"
+    
+    - check_function_length: true
+      description: "Flag functions over max length"
+      severity: low
+      config:
+        max_lines: 80
+    
+    - require_error_handling: true
+      description: "Ensure try/catch or error handling present"
+      severity: medium
+    
+    - check_code_duplication: true
+      description: "Flag repeated code blocks"
+      severity: low
+    
+    - require_documentation: true
+      description: "Suggest comments/docstrings for complex logic"
+      severity: low
+      config:
+        required_for_public_functions: true
+
+best_practices:
+  enabled: true
+  rules:
+    - suggest_modern_idioms: true
+      description: "Suggest modern language features"
+      severity: low
+    
+    - check_design_patterns: true
+      description: "Suggest applicable design patterns"
+      severity: low
+    
+    - check_testability: true
+      description: "Flag code that's hard to test"
+      severity: medium
+    
+    - flag_console_logs: true
+      description: "Warn about console.log in production code"
+      severity: low
+    
+    - suggest_error_messages: true
+      description: "Suggest more descriptive error messages"
+      severity: low
+
+# Language-specific rules (can be extended)
+languages:
+  javascript:
+    enabled: true
+    specific_rules:
+      - check_var_usage: true
+        description: "Flag 'var' usage, suggest 'const'/'let'"
+        severity: low
+      
+      - check_promise_handling: true
+        description: "Verify proper async/await or .catch() handling"
+        severity: medium
+  
+  typescript:
+    enabled: true
+    specific_rules:
+      - check_any_usage: true
+        description: "Flag 'any' type, suggest explicit types"
+        severity: medium
+      
+      - check_null_safety: true
+        description: "Ensure null/undefined checks"
+        severity: medium
+  
+  python:
+    enabled: true
+    specific_rules:
+      - check_imports: true
+        description: "Verify proper import organization"
+        severity: low
+      
+      - check_type_hints: true
+        description: "Suggest type hints for functions"
+        severity: low
+
+# Global configuration
+global:
+  severity_thresholds:
+    high: 10    # Number of high severity issues before failing review
+    medium: 20  # Number of medium severity issues before failing review
+  
+  suppress_rules: []  # Rules to temporarily disable
+  custom_rules: []    # Space for team-specific rules

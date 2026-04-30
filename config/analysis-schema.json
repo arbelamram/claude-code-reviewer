@@ -1,0 +1,79 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Code Analysis Result",
+    "description": "Structured output from Claude Code Reviewer",
+    "type": "object",
+    "required": ["summary", "issues", "overallQuality"],
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "Brief overview of the code analysis (1-2 sentences)"
+      },
+      "issues": {
+        "type": "array",
+        "description": "List of issues found during review",
+        "items": {
+          "type": "object",
+          "required": ["severity", "type", "message", "suggestion"],
+          "properties": {
+            "severity": {
+              "type": "string",
+              "enum": ["high", "medium", "low"],
+              "description": "Issue severity level"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["security", "performance", "style", "best-practice", "custom"],
+              "description": "Category of the issue"
+            },
+            "location": {
+              "type": "string",
+              "description": "Where in the code (line number, function name, etc.)"
+            },
+            "message": {
+              "type": "string",
+              "description": "What the issue is and why it matters"
+            },
+            "suggestion": {
+              "type": "string",
+              "description": "How to fix the issue"
+            },
+            "example": {
+              "type": "string",
+              "description": "Code example showing the fix (optional)"
+            },
+            "standardsReference": {
+              "type": "string",
+              "description": "Which standard rule this violates (e.g., 'security.check_sql_injection')"
+            }
+          }
+        }
+      },
+      "testCases": {
+        "type": "array",
+        "description": "Suggested test cases to cover edge cases",
+        "items": {
+          "type": "string"
+        }
+      },
+      "overallQuality": {
+        "type": "string",
+        "enum": ["excellent", "good", "fair", "needs-improvement"],
+        "description": "Overall code quality assessment"
+      },
+      "positiveAspects": {
+        "type": "array",
+        "description": "What the code does well",
+        "items": {
+          "type": "string"
+        }
+      },
+      "suggestedImprovements": {
+        "type": "array",
+        "description": "Optional suggestions beyond issues",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
