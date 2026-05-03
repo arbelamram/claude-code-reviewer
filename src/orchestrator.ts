@@ -1,3 +1,4 @@
+import { ClaudeService } from './claude-service.js';
 import { StandardsEngine } from './standards-engine.js';
 import { AnalysisFormatter, type AnalysisResult } from './analysis-formatter.js';
 import { GitHubService } from './github/github-service.js';
@@ -65,30 +66,18 @@ class CodeReviewOrchestrator {
       const prompt = this.standardsEngine.buildPrompt(combinedCode, 'mixed');
       console.log(`✅ Prompt ready (${prompt.length} characters)\n`);
 
-      // Step 5: Send to Claude (placeholder for now)
+      // Step 5: Send to Claude
       console.log('🤖 Sending to Claude for analysis...');
-      console.log('⚠️  Note: Claude API integration coming next\n');
-
-      // TODO: Call Claude API
-      // const analysisResponse = await this.callClaudeAPI(prompt);
+      const claudeResponse = await this.callClaudeAPI(prompt);
 
       // Step 6: Parse response
       console.log('✅ Analysis complete\n');
 
       // Step 7: Create PR comment
       console.log('💬 Preparing PR comment...');
-      const sampleAnalysis: AnalysisResult = {
-        summary: 'Code review analysis pending full Claude integration',
-        issues: [],
-        testCases: [],
-        overallQuality: 'fair',
-        positiveAspects: ['Files organized properly'],
-        suggestedImprovements: [
-          'Awaiting full Claude integration to provide detailed feedback',
-        ],
-      };
+      const analysis = AnalysisFormatter.parseAnalysis(claudeResponse);
 
-      const prComment = AnalysisFormatter.formatForPRComment(sampleAnalysis);
+      const prComment = AnalysisFormatter.formatForPRComment(analysis);
 
       // Step 8: Post comment to GitHub
       console.log('📤 Posting comment to GitHub...');
@@ -129,9 +118,8 @@ ${diff.patch || '(No patch content)'}
    * Call Claude API (to be implemented)
    */
   private async callClaudeAPI(prompt: string): Promise<string> {
-    // TODO: Implement Claude API call
-    console.log('Calling Claude API...');
-    return '{"summary": "Pending implementation"}';
+    const claude = new ClaudeService(this.claudeApiKey);
+    return await claude.analyzeCode(prompt);
   }
 }
 
