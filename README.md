@@ -147,53 +147,53 @@ performance:
 
 ## 📁 Project Structure
 
-code-reviewer/
-├── .github/workflows/code-review.yml    # GitHub Actions automation
-├── config/
-│   ├── standards.yaml                   # Coding standards (21 rules)
-│   ├── analysis-schema.json             # Output format spec
-│   └── skill-definition.md              # Claude skill instructions
-├── src/
-│   ├── github/
-│   │   ├── github-config.ts             # Configuration manager
-│   │   └── github-service.ts            # GitHub API wrapper
-│   ├── tests/                           # Test files
-│   ├── analysis-formatter.ts            # Output formatting
-│   ├── claude-service.ts                # Claude API client
-│   ├── cli.ts                           # Command-line interface
-│   ├── orchestrator.ts                  # Main workflow
-│   └── standards-engine.ts              # Rules engine
-├── dist/                                # Compiled JavaScript (gitignored)
-├── .env.example                         # Environment template
-├── package.json                         # Dependencies
-├── tsconfig.json                        # TypeScript config
-├── PROGRESS.md                          # Development progress
-└── README.md                            # This file
+code-reviewer/<br>
+├── .github/workflows/code-review.yml    # GitHub Actions utomation<br>
+├── config/<br>
+│   ├── standards.yaml                   # Coding standards (21 rules)<br>
+│   ├── analysis-schema.json             # Output format spec<br>
+│   └── skill-definition.md              # Claude skill instructions<br>
+├── src/<br>
+│   ├── github/<br>
+│   │   ├── github-config.ts             # Configuration manager<br>
+│   │   └── github-service.ts            # GitHub API wrapper<br>
+│   ├── tests/                           # Test files<br>
+│   ├── analysis-formatter.ts            # Output formatting<br>
+│   ├── claude-service.ts                # Claude API client<br>
+│   ├── cli.ts                           # Command-line interface<br>
+│   ├── orchestrator.ts                  # Main workflow<br>
+│   └── standards-engine.ts              # Rules engine<br>
+├── dist/                                # Compiled JavaScript (gitignored)<br>
+├── .env.example                         # Environment template<br>
+├── package.json                         # Dependencies<br>
+├── tsconfig.json                        # TypeScript config<br>
+├── PROGRESS.md                          # Development progress<br>
+└── README.md                            # This file<br>
 
 ---
 
 ## 🔄 How It Works
 
-GitHub PR Created
-↓
-GitHub Actions Workflow Triggers
-↓
-Load Coding Standards (21 rules)
-↓
-Fetch PR Information & Code Diffs
-↓
-Build Analysis Prompt with Standards
-↓
-Send to Claude API
-↓
-Claude Analyzes Code
-↓
-Parse Claude's JSON Response
-↓
-Format as GitHub PR Comment
-↓
-Post Comment to PR
-↓
+GitHub PR Created<br>
+↓<br>
+GitHub Actions Workflow Triggers<br>
+↓<br>
+Load Coding Standards (21 rules)<br>
+↓<br>
+Fetch PR Information & Code Diffs<br>
+↓<br>
+Build Analysis Prompt with Standards<br>
+↓<br>
+Send to Claude API<br>
+↓<br>
+Claude Analyzes Code<br>
+↓<br>
+Parse Claude's JSON Response<br>
+↓<br>
+Format as GitHub PR Comment<br>
+↓<br>
+Post Comment to PR<br>
+↓<br>
 Developer Reviews Feedback
 
 ---

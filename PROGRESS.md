@@ -25,38 +25,38 @@ Building a reusable Claude skill that automatically reviews GitHub pull requests
 
 ### Project Structure
 
-code-reviewer/
-├── .github/
-│   └── workflows/
-│       └── code-review.yml       (GitHub Actions workflow)
-├── config/
-│   ├── analysis-schema.json      (Output format specification)
-│   ├── skill-definition.md       (Claude skill instructions)
-│   └── standards.yaml            (Coding standards - 21 rules)
-├── dist/                         (Compiled JavaScript - gitignored)
-├── src/
-│   ├── github/
-│   │   ├── github-config.ts      (GitHub configuration manager)
-│   │   └── github-service.ts     (GitHub API wrapper)
-│   ├── tests/
-│   │   ├── test-claude-service.ts
-│   │   ├── test-github.ts
-│   │   ├── test-github-service.ts
-│   │   ├── test-orchestrator-full.ts
-│   │   └── test-orchestrator.ts
-│   ├── analysis-formatter.ts     (Formats analysis output)
-│   ├── claude-service.ts         (Claude API client)
-│   ├── cli.ts                    (Command-line interface)
-│   ├── index.ts                  (Main entry point)
-│   ├── orchestrator.ts           (Main workflow orchestrator)
-│   ├── skill-reviewer.ts         (Skill definition)
-│   └── standards-engine.ts       (Loads and manages standards)
-├── .env                          (Secrets - NOT in Git)
-├── .env.example                  (Template for .env)
-├── .gitignore                    (Git ignore rules)
-├── package.json                  (Dependencies and scripts)
-├── tsconfig.json                 (TypeScript configuration)
-├── PROGRESS.md                   (This file)
+code-reviewer/<br>
+├── .github/<br>
+│   └── workflows/<br>
+│       └── code-review.yml       (GitHub Actions workflow)<br>
+├── config/<br>
+│   ├── analysis-schema.json      (Output format specification)<br>
+│   ├── skill-definition.md       (Claude skill instructions)<br>
+│   └── standards.yaml            (Coding standards - 21 rules)<br>
+├── dist/                         (Compiled JavaScript - gitignored)<br>
+├── src/<br>
+│   ├── github/<br>
+│   │   ├── github-config.ts      (GitHub configuration manager)<br>
+│   │   └── github-service.ts     (GitHub API wrapper)<br>
+│   ├── tests/<br>
+│   │   ├── test-claude-service.ts<br>
+│   │   ├── test-github.ts<br>
+│   │   ├── test-github-service.ts<br>
+│   │   ├── test-orchestrator-full.ts<br>
+│   │   └── test-orchestrator.ts<br>
+│   ├── analysis-formatter.ts     (Formats analysis output)<br>
+│   ├── claude-service.ts         (Claude API client)<br>
+│   ├── cli.ts                    (Command-line interface)<br>
+│   ├── index.ts                  (Main entry point)<br>
+│   ├── orchestrator.ts           (Main workflow orchestrator)<br>
+│   ├── skill-reviewer.ts         (Skill definition)<br>
+│   └── standards-engine.ts       (Loads and manages standards)<br>
+├── .env                          (Secrets - NOT in Git)<br>
+├── .env.example                  (Template for .env)<br>
+├── .gitignore                    (Git ignore rules)<br>
+├── package.json                  (Dependencies and scripts)<br>
+├── tsconfig.json                 (TypeScript configuration)<br>
+├── PROGRESS.md                   (This file)<br>
 └── README.md                     (Project documentation)
 
 ### Core Components Built
