@@ -20,6 +20,21 @@ An AI-powered code review skill that automatically analyzes GitHub pull requests
 
 ---
 
+## ✅ Verified Working
+
+This skill has been **tested and deployed on a real GitHub repository**:
+
+- ✅ **PR #1 Review** — Test PR automatically reviewed
+- ✅ **SQL Injection Detection** — Identified SQL injection vulnerability
+- ✅ **Secret Detection** — Found hardcoded API keys
+- ✅ **Performance Issues** — Detected O(n²) inefficient loops
+- ✅ **Formatted Feedback** — Posted as inline GitHub comments
+- ✅ **Actionable Suggestions** — Provided specific fixes
+
+**See it in action:** https://github.com/arbelamram/claude-code-reviewer/pull/1
+
+---
+
 ## 📋 What It Reviews
 
 ### Security (6 rules)
