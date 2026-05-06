@@ -41,14 +41,15 @@ class GitHubService {
   }
 
   /**
-   * Get the diff for a pull request
+   * Get the diff for a pull request (handles pagination for large PRs)
    */
   async getPRDiff(owner: string, repo: string, prNumber: number): Promise<PRDiff[]> {
     try {
-      const { data: files } = await this.octokit.pulls.listFiles({
+      const files = await this.octokit.paginate(this.octokit.pulls.listFiles, {
         owner,
         repo,
         pull_number: prNumber,
+        per_page: 100,
       });
 
       return files.map(file => ({
