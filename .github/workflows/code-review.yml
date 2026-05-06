@@ -4,6 +4,21 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: number
+      owner:
+        description: 'Repository owner'
+        required: false
+        type: string
+      repo:
+        description: 'Repository name'
+        required: false
+        type: string
+
 jobs:
   code-review:
     runs-on: ubuntu-latest
@@ -32,9 +47,9 @@ jobs:
 
       - name: Run Claude Code Review
         env:
-          GITHUB_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_OWNER: ${{ inputs.owner || github.repository_owner }}
+          GITHUB_REPO: ${{ inputs.repo || github.event.repository.name }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run review
