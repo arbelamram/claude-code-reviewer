@@ -37,7 +37,7 @@ class CodeReviewOrchestrator {
     console.log(`📍 Repository: ${options.owner}/${options.repo}\n`);
 
     try {
-      // Step 1: Get PR context
+      // Step 1: Get PR information
       console.log('📋 Fetching PR information...');
       const prContext = await this.githubService.getPRContext(
         options.owner,
@@ -70,13 +70,14 @@ class CodeReviewOrchestrator {
       console.log('🤖 Sending to Claude for analysis...');
       const claudeResponse = await this.callClaudeAPI(prompt);
 
-      // Step 6: Parse response
+      // Step 6: Parse Claude's response
       console.log('✅ Analysis complete\n');
 
       // Step 7: Create PR comment
       console.log('💬 Preparing PR comment...');
       const analysis = AnalysisFormatter.parseAnalysis(claudeResponse);
 
+      // Format for GitHub
       const prComment = AnalysisFormatter.formatForPRComment(analysis);
 
       // Step 8: Post comment to GitHub

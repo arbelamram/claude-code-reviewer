@@ -9,13 +9,13 @@ async function main() {
   console.log('\n🚀 Claude Code Reviewer CLI\n');
 
   try {
-    // Get environment variables
+    // 1. Load environment variables
     const claudeApiKey = process.env.CLAUDE_API_KEY;
     const owner = process.env.GITHUB_OWNER;
     const repo = process.env.GITHUB_REPO;
     const prNumber = process.env.PR_NUMBER;
 
-    // Validate required variables
+    // 2. Validate required variables
     if (!claudeApiKey) {
       console.error('❌ Error: CLAUDE_API_KEY environment variable not set');
       process.exit(1);
@@ -34,10 +34,10 @@ async function main() {
     console.log(`  PR Number: #${prNumber}`);
     console.log(`  Claude API: ✅ Configured\n`);
 
-    // Initialize orchestrator
+    // 3. Initialize orchestrator
     const orchestrator = new CodeReviewOrchestrator(claudeApiKey);
 
-    // Run code review
+    // 4. Run code review
     await orchestrator.reviewPullRequest({
       owner,
       repo,

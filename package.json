@@ -9,7 +9,7 @@
     "start": "ts-node src/index.ts",
     "dev": "ts-node src/index.ts",
     "cli": "ts-node src/cli.ts",
-    "review": "ts-node src/cli.ts"
+    "review": "node dist/cli.js"
   },
   "keywords": [],
   "author": "",
