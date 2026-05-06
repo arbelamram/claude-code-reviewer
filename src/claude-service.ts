@@ -44,7 +44,7 @@ interface ClaudeMessage {
           },
           body: JSON.stringify({
             model: this.model,
-            max_tokens: 2048,
+            max_tokens: 4096,
             messages: [
               {
                 role: 'user',
