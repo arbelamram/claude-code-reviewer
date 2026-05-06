@@ -27,11 +27,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
+      - name: Build Project
+        run: npm run build
+
       - name: Run Claude Code Review
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           GITHUB_OWNER: ${{ github.repository_owner }}
           GITHUB_REPO: ${{ github.event.repository.name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
         run: npm run review
