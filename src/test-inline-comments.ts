@@ -1,6 +1,7 @@
 // Test file for inline code review comments
 
 const API_KEY = 'sk-12345678abcdef';
+const db = { query: async (q: string) => [] as any[] };
 
 export class UserService {
   public password = 'admin123';
@@ -17,8 +18,8 @@ export class UserService {
     for (let i = 0; i < result.length; i++) {
       for (let j = 0; j < result.length; j++) {
         items.push({
-          user: result[i].name,
-          found: result[j].id === result[i].id
+          user: (result[i] as any).name,
+          found: (result[j] as any).id === (result[i] as any).id
         });
       }
     }
