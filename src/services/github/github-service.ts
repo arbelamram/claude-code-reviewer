@@ -26,6 +26,20 @@ interface CommentOptions {
   comment: string;
 }
 
+interface ReviewCommentInput {
+  path: string;
+  line: number;
+  body: string;
+}
+
+interface ReviewOptions {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  comments: ReviewCommentInput[];
+  summary?: string;
+}
+
 class GitHubService {
   private octokit: Octokit;
   private token: string;
@@ -110,6 +124,32 @@ class GitHubService {
   }
 
   /**
+   * Post a pull request review with inline comments on specific lines
+   */
+  async postPRReview(options: ReviewOptions): Promise<void> {
+    try {
+      if (options.comments.length === 0) {
+        console.log('ℹ️  No inline comments to post');
+        return;
+      }
+
+      await this.octokit.pulls.createReview({
+        owner: options.owner,
+        repo: options.repo,
+        pull_number: options.prNumber,
+        event: 'COMMENT',
+        body: options.summary || '📋 Inline code review comments below',
+        comments: options.comments,
+      });
+
+      console.log(`✅ Review posted to PR #${options.prNumber} with ${options.comments.length} inline comment(s)`);
+    } catch (error) {
+      console.error('Error posting PR review:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Verify token is valid by fetching authenticated user
    */
   async verifyToken(): Promise<boolean> {
@@ -136,4 +176,4 @@ class GitHubService {
   }
 }
 
-export { GitHubService, PRDiff, PRContext, CommentOptions };
+export { GitHubService, PRDiff, PRContext, CommentOptions, ReviewCommentInput, ReviewOptions };

@@ -151,14 +151,28 @@ ${diff.patch || '(No patch content)'}
       console.log('✅ Analysis complete\n');
 
       // Step 7: Create PR comment
-      console.log('💬 Preparing PR comment...');
+      console.log('💬 Preparing PR analysis...');
       const analysis = AnalysisFormatter.parseAnalysis(claudeResponse);
 
       // Format for GitHub
       const prComment = AnalysisFormatter.formatForPRComment(analysis);
 
-      // Step 8: Post comment to GitHub
-      console.log('📤 Posting comment to GitHub...');
+      // Step 8: Post inline review comments (if any issues with file/line info)
+      console.log('📤 Posting review to GitHub...');
+      const reviewComments = AnalysisFormatter.convertToReviewComments(analysis);
+
+      if (reviewComments.length > 0) {
+        await this.githubService.postPRReview({
+          owner: options.owner,
+          repo: options.repo,
+          prNumber: options.prNumber,
+          comments: reviewComments,
+          summary: '📋 Inline code review comments posted below',
+        });
+      }
+
+      // Step 9: Also post summary comment for overview
+      console.log('💬 Posting summary comment...');
       await this.githubService.postPRComment({
         owner: options.owner,
         repo: options.repo,
@@ -167,6 +181,7 @@ ${diff.patch || '(No patch content)'}
       });
 
       console.log(`\n✨ Code review complete for PR #${options.prNumber}!`);
+      console.log(`   📌 Posted ${reviewComments.length} inline comment(s) on specific lines`);
     } catch (error) {
       console.error('❌ Error during code review:', error);
       throw error;

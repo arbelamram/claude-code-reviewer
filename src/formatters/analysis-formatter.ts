@@ -11,6 +11,12 @@ interface CodeIssue {
     standardsReference?: string;
   }
 
+  interface ReviewComment {
+    path: string;
+    line: number;
+    body: string;
+  }
+
   interface AnalysisResult {
     summary: string;
     issues: CodeIssue[];
@@ -21,6 +27,22 @@ interface CodeIssue {
   }
 
   class AnalysisFormatter {
+    /**
+     * Parse location string (e.g., "src/auth.ts:42" or "src/auth.ts:40-45") to get file and line
+     */
+    private static parseLocation(location: string | undefined): { file: string; line: number } | null {
+      if (!location) return null;
+
+      const match = location.match(/^(.+?):(\d+)(?:-\d+)?$/);
+      if (match) {
+        return {
+          file: match[1].trim(),
+          line: parseInt(match[2], 10),
+        };
+      }
+      return null;
+    }
+
     /**
      * Validate analysis result has required fields and correct types
      */
@@ -204,6 +226,34 @@ interface CodeIssue {
         suggestedTests: analysis.testCases?.length || 0,
       };
     }
+
+    /**
+     * Convert analysis issues to GitHub review comments (for inline comments on diff)
+     */
+    static convertToReviewComments(analysis: AnalysisResult): ReviewComment[] {
+      const comments: ReviewComment[] = [];
+
+      for (const issue of analysis.issues) {
+        const parsed = this.parseLocation(issue.location);
+        if (parsed) {
+          const severityEmoji: Record<string, string> = {
+            high: '🔴',
+            medium: '🟡',
+            low: '🟢',
+          };
+
+          const body = `${severityEmoji[issue.severity]} **${issue.type}** (${issue.severity})\n\n${issue.message}\n\n💡 **Fix:** ${issue.suggestion}`;
+
+          comments.push({
+            path: parsed.file,
+            line: parsed.line,
+            body,
+          });
+        }
+      }
+
+      return comments;
+    }
   }
-  
-  export { AnalysisFormatter, AnalysisResult, CodeIssue };
+
+  export { AnalysisFormatter, AnalysisResult, CodeIssue, ReviewComment };
