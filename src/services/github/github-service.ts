@@ -26,6 +26,20 @@ interface CommentOptions {
   comment: string;
 }
 
+interface ReviewCommentInput {
+  path: string;
+  line: number;
+  body: string;
+}
+
+interface ReviewOptions {
+  owner: string;
+  repo: string;
+  prNumber: number;
+  comments: ReviewCommentInput[];
+  summary?: string;
+}
+
 class GitHubService {
   private octokit: Octokit;
   private token: string;
@@ -110,6 +124,56 @@ class GitHubService {
   }
 
   /**
+   * Post a pull request review with inline comments on specific lines
+   */
+  async postPRReview(options: ReviewOptions): Promise<void> {
+    try {
+      if (options.comments.length === 0) {
+        console.log('ℹ️  No inline comments to post');
+        return;
+      }
+
+      const { data: pr } = await this.octokit.pulls.get({
+        owner: options.owner,
+        repo: options.repo,
+        pull_number: options.prNumber,
+      });
+
+      const commitSha = pr.head.sha;
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const comment of options.comments) {
+        try {
+          await this.octokit.pulls.createReviewComment({
+            owner: options.owner,
+            repo: options.repo,
+            pull_number: options.prNumber,
+            commit_id: commitSha,
+            path: comment.path,
+            line: comment.line,
+            body: comment.body,
+          });
+          successCount++;
+        } catch (error) {
+          console.warn(`⚠️  Failed to post comment on ${comment.path}:${comment.line}`);
+          failureCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        console.log(`✅ Posted ${successCount} inline comment(s) to PR #${options.prNumber}`);
+      }
+      if (failureCount > 0) {
+        console.warn(`⚠️  Failed to post ${failureCount} inline comment(s)`);
+      }
+    } catch (error) {
+      console.error('Error posting PR review comments:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Verify token is valid by fetching authenticated user
    */
   async verifyToken(): Promise<boolean> {
@@ -136,4 +200,4 @@ class GitHubService {
   }
 }
 
-export { GitHubService, PRDiff, PRContext, CommentOptions };
+export { GitHubService, PRDiff, PRContext, CommentOptions, ReviewCommentInput, ReviewOptions };
