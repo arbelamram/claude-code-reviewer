@@ -28,6 +28,38 @@ security:
       description: "Ensure user input is validated"
       severity: medium
 
+    - check_resource_leaks: true
+      description: "Flag unclosed file handles, connections, streams"
+      severity: high
+
+    - check_weak_cryptography: true
+      description: "Flag weak crypto (MD5, DES) or missing encryption"
+      severity: high
+
+    - check_race_conditions: true
+      description: "Flag potential race conditions in concurrent code"
+      severity: high
+
+    - check_template_injection: true
+      description: "Detect unescaped template injection vulnerabilities"
+      severity: high
+
+    - check_default_credentials: true
+      description: "Flag hardcoded default usernames/passwords"
+      severity: high
+
+    - check_weak_randomness: true
+      description: "Flag weak random generators (Math.random instead of crypto)"
+      severity: high
+
+    - check_unvalidated_redirects: true
+      description: "Detect unvalidated redirects (open redirect vulnerability)"
+      severity: high
+
+    - check_path_traversal: true
+      description: "Flag path traversal vulnerabilities (../ in file paths)"
+      severity: high
+
 performance:
   enabled: true
   rules:
@@ -51,6 +83,18 @@ performance:
     
     - check_unnecessary_operations: true
       description: "Flag redundant or wasteful operations"
+      severity: low
+
+    - check_database_query_optimization: true
+      description: "Flag missing indexes, unoptimized queries"
+      severity: medium
+
+    - check_api_rate_limiting: true
+      description: "Verify rate limiting is implemented for APIs"
+      severity: medium
+
+    - check_batch_processing: true
+      description: "Suggest batch processing for bulk operations"
       severity: low
 
 style:
@@ -82,6 +126,24 @@ style:
       config:
         required_for_public_functions: true
 
+    - check_deep_nesting: true
+      description: "Flag deeply nested code (>3 levels)"
+      severity: low
+      config:
+        max_nesting_depth: 3
+
+    - check_magic_numbers: true
+      description: "Flag magic numbers, suggest named constants"
+      severity: low
+
+    - enforce_consistent_spacing: true
+      description: "Enforce consistent indentation and spacing"
+      severity: low
+
+    - check_dead_code: true
+      description: "Flag unused variables, imports, functions"
+      severity: low
+
 best_practices:
   enabled: true
   rules:
@@ -105,6 +167,34 @@ best_practices:
       description: "Suggest more descriptive error messages"
       severity: low
 
+    - check_logging: true
+      description: "Verify proper logging at appropriate levels"
+      severity: medium
+
+    - check_data_exposure: true
+      description: "Flag potential data exposure in logs/errors"
+      severity: high
+
+    - suggest_dependency_updates: true
+      description: "Suggest updating outdated dependencies"
+      severity: low
+
+    - check_backwards_compatibility: true
+      description: "Flag potential breaking changes to public APIs"
+      severity: medium
+
+    - check_concurrency_safety: true
+      description: "Verify thread-safety in concurrent code"
+      severity: high
+
+    - check_immutability: true
+      description: "Suggest using immutable data structures where appropriate"
+      severity: low
+
+    - suggest_functional_style: true
+      description: "Suggest functional programming improvements"
+      severity: low
+
 # Language-specific rules (can be extended)
 languages:
   javascript:
@@ -113,9 +203,25 @@ languages:
       - check_var_usage: true
         description: "Flag 'var' usage, suggest 'const'/'let'"
         severity: low
-      
+
       - check_promise_handling: true
         description: "Verify proper async/await or .catch() handling"
+        severity: medium
+
+      - check_unhandled_promise_rejection: true
+        description: "Flag unhandled promise rejections"
+        severity: high
+
+      - check_callback_hell: true
+        description: "Flag deeply nested callbacks, suggest promises/async-await"
+        severity: medium
+
+      - check_loose_equality: true
+        description: "Flag loose equality (== instead of ===)"
+        severity: low
+
+      - check_global_scope_pollution: true
+        description: "Flag unnecessary global variable declarations"
         severity: medium
   
   typescript:
