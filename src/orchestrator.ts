@@ -17,6 +17,8 @@ class CodeReviewOrchestrator {
   private githubService: GitHubService;
   private configManager: GitHubConfigManager;
   private claudeApiKey: string;
+  private maxPromptTokens: number = 150000;
+  private targetPromptTokens: number = 100000;
 
   constructor(claudeApiKey: string) {
     const standardsPath = path.join(process.cwd(), 'config/standards.yaml');
@@ -27,6 +29,73 @@ class CodeReviewOrchestrator {
     const githubToken = this.configManager.getToken();
     this.githubService = new GitHubService(githubToken);
     this.claudeApiKey = claudeApiKey;
+  }
+
+  /**
+   * Estimate token count (rough: ~4 characters = 1 token)
+   */
+  private estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Validate and potentially truncate prompt to fit within token limits
+   */
+  private validatePromptSize(prompt: string, diffs: any[]): { prompt: string; truncated: boolean } {
+    const estimatedTokens = this.estimateTokens(prompt);
+
+    if (estimatedTokens <= this.targetPromptTokens) {
+      console.log(`✅ Prompt size OK (${estimatedTokens} estimated tokens)`);
+      return { prompt, truncated: false };
+    }
+
+    if (estimatedTokens > this.maxPromptTokens) {
+      console.warn(`⚠️ Prompt exceeds max tokens (${estimatedTokens} > ${this.maxPromptTokens})`);
+      console.log('🔪 Truncating code changes to fit context window...');
+
+      let truncatedCode = '';
+      let filesIncluded = 0;
+
+      for (const diff of diffs) {
+        const fileSection = `
+\`\`\`
+File: ${diff.fileName}
+Status: ${diff.status}
+Changes: +${diff.additions}/-${diff.deletions}
+\`\`\`
+
+${diff.patch || '(No patch content)'}
+`;
+
+        const testPrompt = this.standardsEngine.buildPrompt(
+          truncatedCode + fileSection,
+          'mixed'
+        );
+        const testTokens = this.estimateTokens(testPrompt);
+
+        if (testTokens <= this.targetPromptTokens) {
+          truncatedCode += fileSection + '\n\n---\n\n';
+          filesIncluded++;
+        } else {
+          break;
+        }
+      }
+
+      const newPrompt = this.standardsEngine.buildPrompt(truncatedCode, 'mixed');
+      const newTokens = this.estimateTokens(newPrompt);
+
+      console.warn(`⚠️ Included ${filesIncluded}/${diffs.length} files (${newTokens} tokens)`);
+
+      if (filesIncluded === 0) {
+        console.error('❌ Even the smallest file exceeds token limit');
+        return { prompt, truncated: true };
+      }
+
+      return { prompt: newPrompt, truncated: true };
+    }
+
+    console.log(`✅ Prompt size OK (${estimatedTokens} estimated tokens)`);
+    return { prompt, truncated: false };
   }
 
   /**
@@ -63,8 +132,16 @@ class CodeReviewOrchestrator {
 
       // Step 4: Build prompt with standards
       console.log('📊 Building analysis prompt with standards...');
-      const prompt = this.standardsEngine.buildPrompt(combinedCode, 'mixed');
+      let prompt = this.standardsEngine.buildPrompt(combinedCode, 'mixed');
       console.log(`✅ Prompt ready (${prompt.length} characters)\n`);
+
+      // Step 4.5: Validate prompt size
+      console.log('📏 Validating prompt size...');
+      const validation = this.validatePromptSize(prompt, diffs);
+      prompt = validation.prompt;
+      if (validation.truncated) {
+        console.warn('⚠️ Note: Large PR was truncated to fit context window\n');
+      }
 
       // Step 5: Send to Claude
       console.log('🤖 Sending to Claude for analysis...');
