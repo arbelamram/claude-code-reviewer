@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
 interface CodeIssue {
     severity: 'high' | 'medium' | 'low';
     type: 'security' | 'performance' | 'style' | 'best-practice' | 'custom';
@@ -7,7 +10,7 @@ interface CodeIssue {
     example?: string;
     standardsReference?: string;
   }
-  
+
   interface AnalysisResult {
     summary: string;
     issues: CodeIssue[];
@@ -16,10 +19,58 @@ interface CodeIssue {
     positiveAspects?: string[];
     suggestedImprovements?: string[];
   }
-  
+
   class AnalysisFormatter {
     /**
-     * Parse JSON response from Claude
+     * Validate analysis result has required fields and correct types
+     */
+    private static validateSchema(data: any): { valid: boolean; errors?: string[] } {
+      const errors: string[] = [];
+
+      if (typeof data !== 'object' || data === null) {
+        return { valid: false, errors: ['Response is not a JSON object'] };
+      }
+
+      if (typeof data.summary !== 'string') {
+        errors.push('summary: must be a string');
+      }
+
+      if (!Array.isArray(data.issues)) {
+        errors.push('issues: must be an array');
+      } else {
+        data.issues.forEach((issue: any, idx: number) => {
+          if (!['high', 'medium', 'low'].includes(issue.severity)) {
+            errors.push(`issues[${idx}].severity: must be one of [high, medium, low]`);
+          }
+          if (!['security', 'performance', 'style', 'best-practice', 'custom'].includes(issue.type)) {
+            errors.push(`issues[${idx}].type: must be one of [security, performance, style, best-practice, custom]`);
+          }
+          if (typeof issue.message !== 'string') {
+            errors.push(`issues[${idx}].message: must be a string`);
+          }
+          if (typeof issue.suggestion !== 'string') {
+            errors.push(`issues[${idx}].suggestion: must be a string`);
+          }
+        });
+      }
+
+      if (!['excellent', 'good', 'fair', 'needs-improvement'].includes(data.overallQuality)) {
+        errors.push('overallQuality: must be one of [excellent, good, fair, needs-improvement]');
+      }
+
+      if (data.testCases && !Array.isArray(data.testCases)) {
+        errors.push('testCases: must be an array');
+      }
+
+      if (data.positiveAspects && !Array.isArray(data.positiveAspects)) {
+        errors.push('positiveAspects: must be an array');
+      }
+
+      return errors.length > 0 ? { valid: false, errors } : { valid: true };
+    }
+
+    /**
+     * Parse JSON response from Claude with schema validation
      */
     static parseAnalysis(jsonText: string): AnalysisResult {
       try {
@@ -28,9 +79,24 @@ interface CodeIssue {
         if (!jsonMatch) {
           throw new Error('No JSON found in response');
         }
-  
-        const result = JSON.parse(jsonMatch[0]) as AnalysisResult;
-        return result;
+
+        const result = JSON.parse(jsonMatch[0]);
+
+        // Validate against schema
+        const validation = this.validateSchema(result);
+        if (!validation.valid) {
+          const errorMessages = validation.errors?.join('\n') || 'Unknown error';
+          console.warn('⚠️ Claude response validation warnings:');
+          validation.errors?.forEach(err => console.warn(`   ${err}`));
+
+          if (!result.summary || !result.overallQuality || !Array.isArray(result.issues)) {
+            throw new Error(`Schema validation failed (missing required fields):\n${errorMessages}`);
+          }
+        } else {
+          console.log('✅ Claude response validated against schema');
+        }
+
+        return result as AnalysisResult;
       } catch (error) {
         console.error('❌ Failed to parse analysis:', error);
         throw new Error(`Invalid JSON response: ${error}`);
