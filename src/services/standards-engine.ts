@@ -152,7 +152,7 @@ Return your analysis as JSON with this exact structure:
     {
       "severity": "high|medium|low",
       "type": "security|performance|style|best-practice|custom",
-      "location": "line number or function name",
+      "location": "filepath:line_number (e.g., src/auth.ts:42 or src/auth.ts:40-45)",
       "message": "what is wrong",
       "suggestion": "how to fix it"
     }
@@ -165,6 +165,8 @@ Code to review:
 \`\`\`${language}
 ${codeToReview}
 \`\`\`
+
+IMPORTANT: For the location field, include the filename and line number where the issue occurs. Format: filepath:line_number
 
 Return ONLY valid JSON, no other text.`;
   }
