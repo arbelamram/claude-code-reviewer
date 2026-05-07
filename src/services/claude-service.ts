@@ -21,7 +21,7 @@ interface ClaudeMessage {
     private apiUrl: string = 'https://api.anthropic.com/v1/messages';
     private model: string = 'claude-opus-4-6';
     private maxRetries: number = 3;
-    private requestTimeoutMs: number = 30000;
+    private requestTimeoutMs: number = 60000;
 
     constructor(apiKey: string) {
       if (!apiKey) {
