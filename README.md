@@ -2,21 +2,30 @@
 
 An AI-powered code review skill that automatically analyzes GitHub pull requests using Claude and configurable coding standards.
 
-**Status:** ✅ Production-Ready MVP  
-**Latest Version:** 1.0.0  
+**Status:** ✅ Production-Ready  
+**Latest Version:** 1.1.0  
 **License:** ISC
 
 ---
 
 ## 🚀 Features
 
-- ✅ **Automatic PR Reviews** — Triggered on every pull request
+### Core Capabilities
+- ✅ **Automatic PR Reviews** — Triggered on every pull request or manual via `workflow_dispatch`
 - ✅ **Configurable Standards** — Define your team's coding standards in YAML
 - ✅ **Intelligent Analysis** — Uses Claude API to understand code intent
 - ✅ **GitHub Integration** — Posts formatted feedback directly as PR comments
 - ✅ **Reusable Skill** — Can be deployed to any GitHub project
 - ✅ **Low Maintenance** — Rules in YAML, Claude improves automatically
 - ✅ **21 Built-in Rules** — Security, performance, style, and best practices
+
+### Reliability & Scale (v1.1.0)
+- ✅ **Automatic Retries** — Exponential backoff for transient API failures (3 attempts)
+- ✅ **Pagination Support** — Analyzes PRs with unlimited file changes (previously limited to 30 files)
+- ✅ **Large PR Handling** — Intelligent truncation for PRs exceeding 100k tokens
+- ✅ **Request Timeouts** — 30-second timeout prevents hanging requests
+- ✅ **Response Validation** — Validates Claude's JSON against schema to prevent silent failures
+- ✅ **Increased Context** — Max tokens increased from 2048 to 4096 for comprehensive reviews
 
 ---
 
@@ -136,6 +145,13 @@ When you create a pull request, the skill automatically reviews it and posts fee
 npm run build
 GITHUB_OWNER=your_user GITHUB_REPO=your_repo PR_NUMBER=1 npm run review
 ```
+
+### Manual Workflow Trigger
+You can also trigger reviews from the GitHub UI without creating a PR:
+1. Go to **Actions** → **Claude Code Review** workflow
+2. Click **Run workflow**
+3. Enter the PR number and repository details
+4. Click **Run** — the workflow executes and posts the review
 
 ### Customize Standards
 Edit `config/standards.yaml` to:
