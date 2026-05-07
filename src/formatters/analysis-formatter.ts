@@ -28,22 +28,6 @@ interface CodeIssue {
 
   class AnalysisFormatter {
     /**
-     * Parse location string (e.g., "src/auth.ts:42" or "src/auth.ts:40-45") to get file and line
-     */
-    private static parseLocation(location: string | undefined): { file: string; line: number } | null {
-      if (!location) return null;
-
-      const match = location.match(/^(.+?):(\d+)(?:-\d+)?$/);
-      if (match) {
-        return {
-          file: match[1].trim(),
-          line: parseInt(match[2], 10),
-        };
-      }
-      return null;
-    }
-
-    /**
      * Validate analysis result has required fields and correct types
      */
     private static validateSchema(data: any): { valid: boolean; errors?: string[] } {
@@ -228,7 +212,23 @@ interface CodeIssue {
     }
 
     /**
-     * Convert analysis issues to GitHub review comments (for inline comments on diff)
+     * Parse location string (e.g., "src/auth.ts:42") to extract file and line
+     */
+    static parseLocation(location: string | undefined): { file: string; line: number } | null {
+      if (!location) return null;
+
+      const match = location.match(/^(.+?):(\d+)(?:-\d+)?$/);
+      if (match) {
+        return {
+          file: match[1].trim(),
+          line: parseInt(match[2], 10),
+        };
+      }
+      return null;
+    }
+
+    /**
+     * Convert analysis issues to GitHub review comments for inline diffs
      */
     static convertToReviewComments(analysis: AnalysisResult): ReviewComment[] {
       const comments: ReviewComment[] = [];
@@ -249,9 +249,13 @@ interface CodeIssue {
             line: parsed.line,
             body,
           });
+          console.log(`📌 Parsed: ${issue.location} → ${parsed.file}:${parsed.line}`);
+        } else if (issue.location) {
+          console.warn(`⚠️  Could not parse location: "${issue.location}"`);
         }
       }
 
+      console.log(`ℹ️  Converted ${comments.length} issues to inline review comments`);
       return comments;
     }
   }

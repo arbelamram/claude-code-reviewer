@@ -133,18 +133,42 @@ class GitHubService {
         return;
       }
 
-      await this.octokit.pulls.createReview({
+      const { data: pr } = await this.octokit.pulls.get({
         owner: options.owner,
         repo: options.repo,
         pull_number: options.prNumber,
-        event: 'COMMENT',
-        body: options.summary || '📋 Inline code review comments below',
-        comments: options.comments,
       });
 
-      console.log(`✅ Review posted to PR #${options.prNumber} with ${options.comments.length} inline comment(s)`);
+      const commitSha = pr.head.sha;
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const comment of options.comments) {
+        try {
+          await this.octokit.pulls.createReviewComment({
+            owner: options.owner,
+            repo: options.repo,
+            pull_number: options.prNumber,
+            commit_id: commitSha,
+            path: comment.path,
+            line: comment.line,
+            body: comment.body,
+          });
+          successCount++;
+        } catch (error) {
+          console.warn(`⚠️  Failed to post comment on ${comment.path}:${comment.line}`);
+          failureCount++;
+        }
+      }
+
+      if (successCount > 0) {
+        console.log(`✅ Posted ${successCount} inline comment(s) to PR #${options.prNumber}`);
+      }
+      if (failureCount > 0) {
+        console.warn(`⚠️  Failed to post ${failureCount} inline comment(s)`);
+      }
     } catch (error) {
-      console.error('Error posting PR review:', error);
+      console.error('Error posting PR review comments:', error);
       throw error;
     }
   }

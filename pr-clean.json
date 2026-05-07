@@ -1,0 +1,6 @@
+{
+  "title": "feat: Add user service module with code issues for testing",
+  "body": "## Overview\n\nThis PR adds a user service module containing 10 intentional code issues for full GitHub Actions workflow validation.\n\n## Issues Included\n\n1. **SQL Injection** - String concatenation in query\n2. **Missing Error Handling** - Unhandled async response\n3. **Hardcoded Credentials** - API keys in code\n4. **var Usage** - Should use const/let\n5. **Loose Equality** - Using == instead of ===\n6. **Null Safety** - Missing null checks\n7. **Inefficient Algorithm** - O(n²) nested loop\n8. **Console Logs** - Debug output in production\n9. **Unhandled Promise** - Missing .catch()\n10. **Generic Errors** - Poor error messages\n\n## Purpose\n\nFull end-to-end test of:\n- ✅ GitHub Actions workflow trigger\n- ✅ TypeScript build (clean, no errors)\n- ✅ Code review analysis\n- ✅ PR comment posting\n\n## Expected Result\n\nGitHub Actions should automatically post a detailed code review comment with findings from all issue categories.",
+  "head": "test/clean-pr-validation",
+  "base": "main"
+}
