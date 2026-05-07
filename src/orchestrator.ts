@@ -1,8 +1,8 @@
-import { StandardsEngine } from './standards-engine.js';
-import { AnalysisFormatter, type AnalysisResult } from './analysis-formatter.js';
-import { GitHubService } from './github/github-service.js';
-import { GitHubConfigManager } from './github/github-config.js';
-import { ClaudeService } from './claude-service.js';
+import { StandardsEngine } from './services/standards-engine.js';
+import { AnalysisFormatter, type AnalysisResult } from './formatters/analysis-formatter.js';
+import { GitHubService } from './services/github/github-service.js';
+import { GitHubConfigManager } from './services/github/github-config.js';
+import { ClaudeService } from './services/claude-service.js';
 import * as path from 'path';
 
 interface ReviewOptions {

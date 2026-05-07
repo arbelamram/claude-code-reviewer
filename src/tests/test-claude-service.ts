@@ -1,4 +1,4 @@
-import { ClaudeService } from '../claude-service.js';
+import { ClaudeService } from '../services/claude-service.js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 

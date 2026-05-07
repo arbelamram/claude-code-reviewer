@@ -1,5 +1,5 @@
-import { StandardsEngine } from './standards-engine.js';
-import { AnalysisFormatter } from './analysis-formatter.js';
+import { StandardsEngine } from './services/standards-engine.js';
+import { AnalysisFormatter } from './formatters/analysis-formatter.js';
 import * as path from 'path';
 
 async function main() {
