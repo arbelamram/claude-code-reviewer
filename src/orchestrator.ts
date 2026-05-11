@@ -189,19 +189,54 @@ ${diff.patch || '(No patch content)'}
   }
 
   /**
-   * Combine code from multiple files into a single string
+   * Parse a unified diff patch and annotate each line with its actual file line number.
+   * This lets Claude report exact line numbers instead of approximate ones from @@ headers.
+   *
+   * Output format per line:
+   *   L<n>+  <code>   — added line at file line n
+   *   L<n>   <code>   — context (unchanged) line at file line n
+   *        - <code>   — removed line (no right-side line number)
+   */
+  private annotatePatchLines(fileName: string, patch: string): string {
+    if (!patch) return `File: ${fileName}\n(No patch content)`;
+
+    const lines = patch.split('\n');
+    const out: string[] = [`File: ${fileName}`];
+    let rightLine = 0;
+
+    for (const raw of lines) {
+      const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunk) {
+        rightLine = parseInt(hunk[1], 10) - 1;
+        out.push(raw);
+        continue;
+      }
+
+      if (raw.startsWith('+')) {
+        rightLine++;
+        out.push(`L${rightLine}+  ${raw.slice(1)}`);
+      } else if (raw.startsWith('-')) {
+        out.push(`     -  ${raw.slice(1)}`);
+      } else {
+        rightLine++;
+        out.push(`L${rightLine}   ${raw.slice(1)}`);
+      }
+    }
+
+    return out.join('\n');
+  }
+
+  /**
+   * Combine code from multiple files into a single string with annotated line numbers.
    */
   private prepareCombinedCode(diffs: any[]): string {
     const sections = diffs.map(diff => {
-      return `
-\`\`\`
-File: ${diff.fileName}
-Status: ${diff.status}
-Changes: +${diff.additions}/-${diff.deletions}
-\`\`\`
+      const annotated = this.annotatePatchLines(diff.fileName, diff.patch);
+      return `\`\`\`
+Status: ${diff.status} (+${diff.additions}/-${diff.deletions})
 
-${diff.patch || '(No patch content)'}
-`;
+${annotated}
+\`\`\``;
     });
 
     return sections.join('\n\n---\n\n');
