@@ -180,8 +180,18 @@ ${diff.patch || '(No patch content)'}
         comment: prComment,
       });
 
+      // Step 10: Create GitHub issues for high/medium severity problems
+      console.log('📋 Creating GitHub issues for problems found...');
+      const issueCount = await this.createIssuesForProblems(
+        options.owner,
+        options.repo,
+        options.prNumber,
+        analysis
+      );
+
       console.log(`\n✨ Code review complete for PR #${options.prNumber}!`);
       console.log(`   📌 Posted ${reviewComments.length} inline comment(s) on specific lines`);
+      console.log(`   🐛 Created ${issueCount} GitHub issue(s) for problems to fix`);
     } catch (error) {
       console.error('❌ Error during code review:', error);
       throw error;
@@ -243,7 +253,69 @@ ${annotated}
   }
 
   /**
-   * Call Claude API (to be implemented)
+   * Create a GitHub issue for each high/medium severity problem found in the review.
+   * Returns the number of issues created.
+   */
+  private async createIssuesForProblems(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    analysis: AnalysisResult
+  ): Promise<number> {
+    const actionable = analysis.issues.filter(
+      i => i.severity === 'high' || i.severity === 'medium'
+    );
+
+    if (actionable.length === 0) {
+      console.log('ℹ️  No high/medium issues — skipping issue creation');
+      return 0;
+    }
+
+    const severityLabel: Record<string, string> = {
+      high: 'priority: high',
+      medium: 'priority: medium',
+    };
+
+    let created = 0;
+    for (const issue of actionable) {
+      const shortMsg = issue.message.length > 72
+        ? issue.message.slice(0, 69) + '...'
+        : issue.message;
+
+      const title = `[Code Review] ${issue.type}: ${shortMsg}`;
+
+      const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
+      const body = [
+        `> Auto-generated from code review on PR #${prNumber}`,
+        '',
+        `**Severity:** ${issue.severity}`,
+        `**Type:** ${issue.type}`,
+        location,
+        '',
+        '## Problem',
+        issue.message,
+        '',
+        '## Suggested Fix',
+        issue.suggestion,
+        ...(issue.example ? ['', '## Example', `\`\`\`\n${issue.example}\n\`\`\``] : []),
+      ].join('\n');
+
+      try {
+        await this.githubService.createIssue(owner, repo, title, body, [
+          'code-review',
+          severityLabel[issue.severity],
+        ]);
+        created++;
+      } catch {
+        console.warn(`⚠️  Could not create issue for: ${shortMsg}`);
+      }
+    }
+
+    return created;
+  }
+
+  /**
+   * Call Claude API
    */
   private async callClaudeAPI(prompt: string): Promise<string> {
     const claude = new ClaudeService(this.claudeApiKey);

@@ -174,6 +174,32 @@ class GitHubService {
   }
 
   /**
+   * Create a GitHub issue
+   */
+  async createIssue(
+    owner: string,
+    repo: string,
+    title: string,
+    body: string,
+    labels?: string[]
+  ): Promise<number> {
+    try {
+      const { data: issue } = await this.octokit.issues.create({
+        owner,
+        repo,
+        title,
+        body,
+        labels,
+      });
+      console.log(`✅ Created issue #${issue.number}: ${title}`);
+      return issue.number;
+    } catch (error) {
+      console.error('Error creating issue:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Verify token is valid by fetching authenticated user
    */
   async verifyToken(): Promise<boolean> {
