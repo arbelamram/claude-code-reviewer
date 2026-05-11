@@ -180,12 +180,13 @@ ${diff.patch || '(No patch content)'}
         comment: prComment,
       });
 
-      // Step 10: Create GitHub issues for high/medium severity problems
+      // Step 10: Create GitHub issues for high/medium severity problems and update commit status
       console.log('📋 Creating GitHub issues for problems found...');
       const issueCount = await this.createIssuesForProblems(
         options.owner,
         options.repo,
         options.prNumber,
+        prContext.headSha,
         analysis
       );
 
@@ -253,13 +254,15 @@ ${annotated}
   }
 
   /**
-   * Create a GitHub issue for each high/medium severity problem found in the review.
+   * Create a GitHub issue for each high/medium severity problem found in the review,
+   * then set the commit status to pending (blocking merge) until all issues are resolved.
    * Returns the number of issues created.
    */
   private async createIssuesForProblems(
     owner: string,
     repo: string,
     prNumber: number,
+    headSha: string,
     analysis: AnalysisResult
   ): Promise<number> {
     const actionable = analysis.issues.filter(
@@ -267,7 +270,12 @@ ${annotated}
     );
 
     if (actionable.length === 0) {
-      console.log('ℹ️  No high/medium issues — skipping issue creation');
+      console.log('ℹ️  No high/medium issues — setting commit status to success');
+      await this.githubService.setCommitStatus(
+        owner, repo, headSha,
+        'success',
+        'No blocking code review issues found'
+      );
       return 0;
     }
 
@@ -309,6 +317,15 @@ ${annotated}
       } catch {
         console.warn(`⚠️  Could not create issue for: ${shortMsg}`);
       }
+    }
+
+    // Block merge until all created issues are resolved
+    if (created > 0) {
+      await this.githubService.setCommitStatus(
+        owner, repo, headSha,
+        'pending',
+        `${created} code review issue(s) must be resolved before merging`
+      );
     }
 
     return created;
