@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-**Claude Code Reviewer** is an AI-powered code review tool that automatically analyzes GitHub pull requests using Claude and customizable coding standards. It runs as a GitHub Action on every PR and posts formatted feedback as comments.
+**Claude Code Reviewer** is an AI-powered code review tool that automatically analyzes GitHub pull requests using Claude and customizable coding standards. It runs as a GitHub Action on every PR, posts inline feedback on specific lines, creates GitHub issues for high/medium severity findings, and blocks the merge button until all issues are resolved.
 
 **Tech Stack**: TypeScript, Node.js, Claude API, GitHub API (Octokit), ES modules
 
@@ -31,29 +31,43 @@ The system follows a clear separation of concerns pattern:
 ### Core Workflow (Orchestrator)
 
 `src/orchestrator.ts:CodeReviewOrchestrator` is the main coordinator:
-1. Loads coding standards from YAML
-2. Fetches PR context and diffs from GitHub
-3. Combines code changes into a single prompt
-4. Sends combined code + standards to Claude API
-5. Parses Claude's JSON response
-6. Formats output as a GitHub PR comment
-7. Posts comment back to the PR
+1. Immediately sets `code-review/issues` commit status to `failure` ("Code review in progress…")
+2. Loads coding standards from YAML
+3. Fetches PR context and diffs from GitHub (including head SHA)
+4. Annotates each diff line with its actual file line number (`annotatePatchLines`)
+5. Builds analysis prompt (annotated code + standards rules)
+6. Sends to Claude API
+7. Parses Claude's JSON response
+8. Posts inline review comments on specific diff lines (`postPRReview`)
+9. Posts summary comment (`postPRComment`)
+10. Creates GitHub issues for high/medium severity findings (`createIssuesForProblems`)
+11. Sets commit status to `failure` with issue count, or `success` if no blocking issues
+
+A second workflow (`resolve-check.yml`) watches for issue-close events and flips the status to `success` when all code-review issues for the PR are resolved.
 
 ### Key Components
 
-- **StandardsEngine** (`src/standards-engine.ts`): Loads `config/standards.yaml`, validates rules, builds the prompt context with standards
-- **ClaudeService** (`src/claude-service.ts`): Raw Claude API client (v1/messages endpoint), handles authentication and model selection (Opus 4.6)
-- **GitHubService** (`src/github/github-service.ts`): Octokit wrapper for GitHub API calls (PR context, file diffs, comments)
-- **AnalysisFormatter** (`src/analysis-formatter.ts`): Parses Claude's JSON response and converts to GitHub-compatible markdown comment
+- **StandardsEngine** (`src/services/standards-engine.ts`): Loads `config/standards.yaml`, validates rules, builds the prompt context with standards and line-number format instructions
+- **ClaudeService** (`src/services/claude-service.ts`): Raw Claude API client (v1/messages endpoint), handles authentication and model selection (Opus 4.6), retry logic, timeouts
+- **GitHubService** (`src/services/github/github-service.ts`): Octokit wrapper — PR context (including `headSha`), file diffs, inline review comments (`postPRReview`), PR comments, issue creation (`createIssue`), commit status (`setCommitStatus`)
+- **AnalysisFormatter** (`src/formatters/analysis-formatter.ts`): Parses Claude's JSON response, converts issues to inline `ReviewComment` objects via `convertToReviewComments`, formats summary as markdown
 - **CLI** (`src/cli.ts`): Entry point for manual reviews; validates environment variables (GITHUB_OWNER, GITHUB_REPO, PR_NUMBER, CLAUDE_API_KEY)
 
 ### Data Flow
 
 ```
+PR opened → commit status: failure ("in progress")
 standards.yaml → StandardsEngine (build prompt with rules)
-GitHub PR → GitHubService (fetch diffs)
-Code + Rules → Claude API → JSON response
-JSON → AnalysisFormatter → GitHub comment markdown
+GitHub PR → GitHubService (fetch diffs + headSha)
+Diffs → annotatePatchLines (add L<n> prefix to each line)
+Annotated code + Rules → Claude API → JSON response
+JSON → AnalysisFormatter → inline ReviewComments + summary markdown
+ReviewComments → GitHubService.postPRReview (inline diff comments)
+Summary → GitHubService.postPRComment
+High/medium issues → GitHubService.createIssue (GitHub issues)
+Issues created → commit status: failure (N issues)
+No issues → commit status: success
+Issue closed → resolve-check.yml → recount → success or failure
 ```
 
 ## Configuration & Customization
@@ -157,24 +171,37 @@ Run individually with `npx ts-node src/tests/<file>`.
 
 ## Deployment
 
-### GitHub Actions Workflow
+### GitHub Actions Workflows
 
-Deployed via `.github/workflows/code-review.yml` (auto-triggered on PR creation):
-1. Checkout code
-2. Install dependencies
-3. Set environment from secrets (GITHUB_TOKEN, CLAUDE_API_KEY)
-4. Run `npm run review` with PR context injected by GitHub Actions
+Two workflows work together:
+
+**`code-review.yml`** (triggers on `pull_request: [opened, synchronize, reopened]`):
+1. Immediately sets `code-review/issues` to `failure` ("Code review in progress…")
+2. Checkout, npm install, build
+3. Run `npm run review` — orchestrator runs the full review
+4. Permissions required: `pull-requests: write`, `contents: read`, `issues: write`, `statuses: write`
+
+**`resolve-check.yml`** (triggers on `issues: [closed]`):
+- Fires when any issue labelled `code-review` and created by `github-actions[bot]` is closed
+- Extracts PR number from issue body, searches for remaining open issues for that PR
+- Sets `code-review/issues` to `success` if none remain, `failure` otherwise
+
+### Branch Protection Requirement
+
+Add `code-review/issues` as a required status check in the repo's branch protection ruleset. The check name appears in the dropdown after the workflow has run at least once on a PR.
 
 ### Manual Deployment to Other Projects
 
-Copy `.github/workflows/code-review.yml` to a new repo's `.github/workflows/`, add secrets, and customize `config/standards.yaml` for that team's needs.
+Copy both `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo's `.github/workflows/`, add `GH_TOKEN` and `CLAUDE_API_KEY` secrets, and customize `config/standards.yaml`.
 
 ## Potential Pain Points
 
 1. **Claude API Rate Limits**: Each review costs input tokens (varies by code size). Check Anthropic console billing if reviews fail.
-2. **GitHub Rate Limits**: Octokit is client-authenticated, not app-authenticated; older repos with many PRs may hit limits. Consider upgrading to app-based auth if needed.
-3. **Long PR Diffs**: Very large diffs may exceed Claude's context window. Current limit is 2048 output tokens; adjust in `ClaudeService.analyzeCode()` if needed.
+2. **GitHub Rate Limits**: Octokit is client-authenticated; older repos with many PRs may hit limits. Issue creation is sequential (capped at 10 per run) to stay within secondary rate limits.
+3. **Long PR Diffs**: Very large diffs may exceed Claude's context window. Prompt size is validated; intelligent truncation kicks in above 100k tokens. Output tokens capped at 4096.
 4. **YAML Parsing Errors**: If standards.yaml has syntax errors, StandardsEngine.loadStandards() throws immediately. Validate YAML syntax before deploying.
+5. **Merge remains blocked after closing issues**: `resolve-check.yml` only fires for issues created by `github-actions[bot]`. Manually-created issues or issues closed before the workflow is in `main` require a manual status update via the GitHub API.
+6. **Outdated inline comments**: When a new commit is pushed after comments are posted, GitHub marks the old comments "Outdated". This is expected — it signals the code changed after the comment was written.
 
 ## Notes for Future Enhancements
 

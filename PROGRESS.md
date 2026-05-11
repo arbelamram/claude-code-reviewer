@@ -1,8 +1,8 @@
 # Claude Code Reviewer Skill - Progress Report
 
 **Project Start Date:** April 30, 2026  
-**Current Status:** Week 2 - Reliability & Scale Improvements (COMPLETE)  
-**Last Updated:** May 7, 2026
+**Current Status:** Week 3 - Issue Tracking & Merge Control (COMPLETE)  
+**Last Updated:** May 11, 2026
 
 ---
 
@@ -238,6 +238,53 @@ All changes tested and verified:
 - Updated version from 1.0.0 → 1.1.0
 - Added reliability and scale improvements
 - Production-ready for enterprise use
+
+---
+
+---
+
+## ✅ WEEK 3 - ISSUE TRACKING & MERGE CONTROL (May 11, 2026)
+
+### Accurate Inline Comment Line Numbers
+- ✅ `annotatePatchLines()` pre-processes each diff patch, prefixing every line with its actual file line number (`L42+  code`)
+- ✅ Claude reads `L<n>` prefixes to report the exact offending statement, not a surrounding bracket
+- ✅ Prompt updated to explain the format and instruct Claude to use it
+- ✅ **Status:** MERGED INTO MAIN
+
+### GitHub Issue Creation per Finding
+- ✅ After review, auto-creates a GitHub issue for every high/medium severity finding
+- ✅ Issues labelled `code-review` + `priority: high/medium` for filtering
+- ✅ Issue body includes problem, suggested fix, location, and PR reference
+- ✅ AI-generated content sanitized (HTML stripped, @mentions neutralised, control chars removed)
+- ✅ Sequential creation (capped at 10) to respect GitHub secondary rate limits
+- ✅ **Status:** MERGED INTO MAIN
+
+### Merge Blocking Until Issues Resolved
+- ✅ `code-review/issues` commit status set to `failure` at the very start of the workflow ("Code review in progress…") — merge blocked from the moment the PR opens
+- ✅ Status flips to `success` only after a clean review (zero high/medium issues)
+- ✅ Status stays `failure` with issue count when blocking issues exist
+- ✅ **Status:** MERGED INTO MAIN
+
+### Auto-Unblock via resolve-check.yml
+- ✅ New `resolve-check.yml` workflow triggers on `issues: [closed]`
+- ✅ Validates issue was created by `github-actions[bot]` (prevents spoofing)
+- ✅ Extracts PR number from issue body with strict `/^\d+$/` regex validation
+- ✅ Uses GitHub search API to count remaining open `code-review` issues for the PR
+- ✅ Sets status to `success` when count = 0, `failure` with count otherwise
+- ✅ **Status:** MERGED INTO MAIN
+
+### Security Hardening
+- ✅ All dynamic values in workflow scripts passed via `env:` variables (prevents script injection)
+- ✅ Error messages capped at 120 characters in logs (prevents token/credential leakage)
+- ✅ Issue title and body fields sanitized before API calls
+- ✅ `Number.isSafeInteger` validation on PR number after `parseInt`
+- ✅ **Status:** MERGED INTO MAIN
+
+### Git Workflow (Week 3)
+- ✅ Each feature developed on its own branch, merged via PR
+- ✅ Branch protection with required `code-review/issues` status check active on `main`
+- ✅ All changes squash-merged into main for clean history
+- ✅ Version bumped: 1.1.0 → 1.2.0
 
 ---
 
