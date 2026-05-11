@@ -1,14 +1,42 @@
 import { StandardsEngine } from '../services/standards-engine.js';
 import { ClaudeService } from '../services/claude-service.js';
 import { AnalysisFormatter } from '../formatters/analysis-formatter.js';
-import * as fs from 'fs';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+const TEST_CODE = `
+const API_KEY = 'sk-prod-hardcoded-secret';
+
+function getUser(userId) {
+  const query = 'SELECT * FROM users WHERE id = ' + userId;
+  console.log('Executing:', query);
+  return db.query(query);
+}
+
+async function login(username, password) {
+  console.log('Login attempt:', username, password);
+  const user = await getUser(username);
+  if (user.password == password) {
+    return { token: Math.random().toString(36) };
+  }
+  throw new Error('Error');
+}
+
+function processAll(items) {
+  const results = [];
+  for (let i = 0; i < items.length; i++) {
+    for (let j = 0; j < items.length; j++) {
+      results.push(items[i] + items[j]);
+    }
+  }
+  return results;
+}
+`.trim();
+
 async function testSkillWithComprehensiveErrors() {
-  console.log('\n🧪 Testing Code Reviewer Skill with Comprehensive Error Functions\n');
+  console.log('\n🧪 Testing Code Reviewer Skill with Sample Error Code\n');
 
   try {
     // 1. Load standards
@@ -18,11 +46,10 @@ async function testSkillWithComprehensiveErrors() {
     standardsEngine.loadStandards();
     console.log('✅ Standards loaded\n');
 
-    // 2. Read test code
-    console.log('📝 Step 2: Reading test code sample...');
-    const testCodePath = path.join(process.cwd(), 'test-code-sample.js');
-    const testCode = fs.readFileSync(testCodePath, 'utf-8');
-    console.log(`✅ Test code loaded (${testCode.length} characters, 32 error functions)\n`);
+    // 2. Use inline test code
+    console.log('📝 Step 2: Using inline test code sample...');
+    const testCode = TEST_CODE;
+    console.log(`✅ Test code ready (${testCode.length} characters)\n`);
 
     // 3. Build prompt
     console.log('🔨 Step 3: Building analysis prompt...');

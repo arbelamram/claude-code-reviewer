@@ -1,6 +1,0 @@
-{
-  "title": "feat: Add authentication handler module with code issues",
-  "body": "## Final Validation Test\n\nThis PR adds an authentication handler module with 10 intentional code issues to validate the GitHub Actions workflow with the increased 60-second timeout fix.\n\n## Issues Included\n\n1. **Hardcoded Secrets** - API keys and passwords in code\n2. **SQL Injection** - String concatenation in queries\n3. **Missing Error Handling** - Unhandled async responses\n4. **var Usage** - Should use const/let\n5. **Loose Equality** - Using == instead of ===\n6. **Null Safety** - Missing null checks\n7. **O(n²) Loop** - Inefficient nested iteration\n8. **Console Logs** - Debug output in production\n9. **Unhandled Promise** - Missing .catch()\n10. **Generic Errors** - Poor error messages\n\n## Test Validation\n\nThis PR validates:\n- ✅ GitHub Actions workflow triggers\n- ✅ TypeScript build succeeds\n- ✅ 60-second timeout allows API calls to complete\n- ✅ Code review analysis executes\n- ✅ Results posted as PR comments\n\n## Expected Result\n\nGitHub Actions should successfully:\n1. Checkout code\n2. Build with npm (no TypeScript errors)\n3. Run code review with 60s timeout\n4. Post detailed analysis comment with all findings",
-  "head": "test/final-validation",
-  "base": "main"
-}
