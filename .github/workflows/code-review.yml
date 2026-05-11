@@ -26,6 +26,8 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
+      issues: write
+      statuses: write
     
     steps:
       - name: Checkout code
