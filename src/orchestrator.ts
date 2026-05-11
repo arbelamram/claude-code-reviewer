@@ -284,39 +284,43 @@ ${annotated}
       medium: 'priority: medium',
     };
 
-    let created = 0;
-    for (const issue of actionable) {
-      const shortMsg = issue.message.length > 72
-        ? issue.message.slice(0, 69) + '...'
-        : issue.message;
+    const results = await Promise.allSettled(
+      actionable.map(async (issue) => {
+        // Sanitize: strip newlines and control characters from the title
+        const shortMsg = issue.message
+          .replace(/[\r\n\t]+/g, ' ')
+          .trim()
+          .slice(0, 69);
+        const ellipsis = issue.message.trim().length > 69 ? '...' : '';
+        const title = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
 
-      const title = `[Code Review] ${issue.type}: ${shortMsg}`;
+        const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
+        const body = [
+          `> Auto-generated from code review on PR #${prNumber}`,
+          '',
+          `**Severity:** ${issue.severity}`,
+          `**Type:** ${issue.type}`,
+          location,
+          '',
+          '## Problem',
+          issue.message,
+          '',
+          '## Suggested Fix',
+          issue.suggestion,
+          ...(issue.example ? ['', '## Example', `\`\`\`\n${issue.example}\n\`\`\``] : []),
+        ].join('\n');
 
-      const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
-      const body = [
-        `> Auto-generated from code review on PR #${prNumber}`,
-        '',
-        `**Severity:** ${issue.severity}`,
-        `**Type:** ${issue.type}`,
-        location,
-        '',
-        '## Problem',
-        issue.message,
-        '',
-        '## Suggested Fix',
-        issue.suggestion,
-        ...(issue.example ? ['', '## Example', `\`\`\`\n${issue.example}\n\`\`\``] : []),
-      ].join('\n');
-
-      try {
         await this.githubService.createIssue(owner, repo, title, body, [
           'code-review',
           severityLabel[issue.severity],
         ]);
-        created++;
-      } catch {
-        console.warn(`⚠️  Could not create issue for: ${shortMsg}`);
-      }
+      })
+    );
+
+    const created = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+    if (failed > 0) {
+      console.warn(`⚠️  Failed to create ${failed} issue(s)`);
     }
 
     // Block merge until all created issues are resolved

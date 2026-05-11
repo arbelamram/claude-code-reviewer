@@ -196,7 +196,7 @@ class GitHubService {
       console.log(`✅ Created issue #${issue.number}: ${title}`);
       return issue.number;
     } catch (error) {
-      console.error('Error creating issue:', error);
+      console.error('Error creating issue:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }
@@ -225,7 +225,7 @@ class GitHubService {
       });
       console.log(`✅ Commit status set to "${state}": ${description}`);
     } catch (error) {
-      console.error('Error setting commit status:', error);
+      console.error('Error setting commit status:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }
