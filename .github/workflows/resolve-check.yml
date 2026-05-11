@@ -42,13 +42,19 @@ jobs:
         with:
           script: |
             const raw = process.env.PR_NUMBER || '';
+            // Strict digit-only check before parseInt; guarantees prNum is a safe integer
+            // with no special characters that could affect the search query.
             if (!/^\d+$/.test(raw)) {
               core.setFailed(`Invalid PR number format: "${raw}"`);
               return;
             }
             const prNum = parseInt(raw, 10);
+            if (!Number.isSafeInteger(prNum) || prNum <= 0) {
+              core.setFailed('PR number out of safe integer range');
+              return;
+            }
 
-            // Use search API to avoid fetching and filtering client-side
+            // prNum is a validated positive integer — safe to interpolate into search query.
             const query = `repo:${context.repo.owner}/${context.repo.repo} is:issue is:open label:code-review "PR #${prNum}" in:body`;
             const { data: searchResult } = await github.rest.search.issuesAndPullRequests({
               q: query,
@@ -85,7 +91,7 @@ jobs:
             });
             core.info('Commit status updated to success — PR is now unblocked');
 
-      - name: Leave status pending when issues remain
+      - name: Leave status as failure when issues remain
         if: |
           steps.extract.outputs.pr_number != '' &&
           steps.check.outputs.remaining != '0'
@@ -100,7 +106,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: process.env.HEAD_SHA,
-              state: 'pending',
+              state: 'failure',
               description: `${remaining} code review issue(s) must be resolved before merging`,
               context: 'code-review/issues',
             });

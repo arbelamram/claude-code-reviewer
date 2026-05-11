@@ -1,5 +1,5 @@
 import { StandardsEngine } from './services/standards-engine.js';
-import { AnalysisFormatter, type AnalysisResult } from './formatters/analysis-formatter.js';
+import { AnalysisFormatter, type AnalysisResult, type CodeIssue } from './formatters/analysis-formatter.js';
 import { GitHubService } from './services/github/github-service.js';
 import { GitHubConfigManager } from './services/github/github-config.js';
 import { ClaudeService } from './services/claude-service.js';
@@ -253,10 +253,63 @@ ${annotated}
     return sections.join('\n\n---\n\n');
   }
 
+  private static readonly SEVERITY_LABEL: Record<string, string> = {
+    high: 'priority: high',
+    medium: 'priority: medium',
+  };
+
+  private static readonly MAX_ISSUES_PER_RUN = 10;
+
   /**
-   * Create a GitHub issue for each high/medium severity problem found in the review,
-   * then set the commit status to pending (blocking merge) until all issues are resolved.
-   * Returns the number of issues created.
+   * Sanitize an AI-generated string before embedding it in a GitHub issue.
+   * Strips HTML tags, neutralises @mentions, and removes control characters.
+   */
+  private sanitizeForIssue(text: string): string {
+    return text
+      .replace(/<[^>]*>/g, '')            // strip HTML tags
+      .replace(/@(?=[a-zA-Z])/g, '[at]')  // neutralise @mentions
+      .replace(/[^\x09\x0A\x0D\x20-\x7E\x80-￿]/g, ''); // strip control chars
+  }
+
+  /**
+   * Format a single CodeIssue as a GitHub issue title + body.
+   */
+  private formatIssueContent(
+    issue: CodeIssue,
+    prNumber: number
+  ): { title: string; body: string } {
+    const shortMsg = issue.message
+      .replace(/[\r\n\t`<>]+/g, ' ')
+      .trim()
+      .slice(0, 69);
+    const ellipsis = issue.message.trim().length > 69 ? '...' : '';
+    const title = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
+
+    const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
+    const body = [
+      `> Auto-generated from code review on PR #${prNumber}`,
+      '',
+      `**Severity:** ${issue.severity}`,
+      `**Type:** ${issue.type}`,
+      location,
+      '',
+      '## Problem',
+      this.sanitizeForIssue(issue.message),
+      '',
+      '## Suggested Fix',
+      this.sanitizeForIssue(issue.suggestion),
+      ...(issue.example
+        ? ['', '## Example', `\`\`\`\n${this.sanitizeForIssue(issue.example)}\n\`\`\``]
+        : []),
+    ].join('\n');
+
+    return { title, body };
+  }
+
+  /**
+   * Create GitHub issues sequentially (avoids secondary rate limits) and
+   * then set the commit status to failure until all issues are resolved.
+   * Returns the number of issues successfully created.
    */
   private async createIssuesForProblems(
     owner: string,
@@ -277,71 +330,37 @@ ${annotated}
           'success',
           'No blocking code review issues found'
         );
-      } catch {
-        console.warn('⚠️  Could not set commit status to success — review passed but status update failed');
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`⚠️  Status update failed (review still passed): ${msg.slice(0, 120)}`);
       }
       return 0;
     }
 
-    const severityLabel: Record<string, string> = {
-      high: 'priority: high',
-      medium: 'priority: medium',
-    };
-
-    // Cap at 10 to stay within GitHub secondary rate limits
-    const capped = actionable.slice(0, 10);
-    if (actionable.length > 10) {
-      console.warn(`⚠️  ${actionable.length} issues found; only creating the first 10 to avoid rate limits`);
+    const capped = actionable.slice(0, CodeReviewOrchestrator.MAX_ISSUES_PER_RUN);
+    if (actionable.length > CodeReviewOrchestrator.MAX_ISSUES_PER_RUN) {
+      console.warn(`⚠️  ${actionable.length} issues found; capped at ${CodeReviewOrchestrator.MAX_ISSUES_PER_RUN} to respect rate limits`);
     }
 
-    const results = await Promise.allSettled(
-      capped.map(async (issue) => {
-        // Strip control chars, newlines, and markdown-injection characters from title
-        const shortMsg = issue.message
-          .replace(/[\r\n\t`<>]+/g, ' ')
-          .trim()
-          .slice(0, 69);
-        const ellipsis = issue.message.trim().length > 69 ? '...' : '';
-        const title = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
-
-        // Sanitize AI-generated body fields: neutralise @mentions and strip HTML tags
-        const sanitize = (s: string) =>
-          s.replace(/<[^>]*>/g, '').replace(/@(\w)/g, '[at]$1');
-
-        const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
-        const body = [
-          `> Auto-generated from code review on PR #${prNumber}`,
-          '',
-          `**Severity:** ${issue.severity}`,
-          `**Type:** ${issue.type}`,
-          location,
-          '',
-          '## Problem',
-          sanitize(issue.message),
-          '',
-          '## Suggested Fix',
-          sanitize(issue.suggestion),
-          ...(issue.example ? ['', '## Example', `\`\`\`\n${sanitize(issue.example)}\n\`\`\``] : []),
-        ].join('\n');
-
+    let created = 0;
+    for (const issue of capped) {
+      const { title, body } = this.formatIssueContent(issue, prNumber);
+      try {
         await this.githubService.createIssue(owner, repo, title, body, [
           'code-review',
-          severityLabel[issue.severity],
+          CodeReviewOrchestrator.SEVERITY_LABEL[issue.severity],
         ]);
-      })
-    );
-
-    const created = results.filter(r => r.status === 'fulfilled').length;
-    const failed = results.filter(r => r.status === 'rejected').length;
-    if (failed > 0) {
-      console.warn(`⚠️  Failed to create ${failed} issue(s)`);
+        created++;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`⚠️  Could not create issue: ${msg.slice(0, 120)}`);
+      }
     }
 
-    // Block merge until all created issues are resolved
     if (created > 0) {
       await this.githubService.setCommitStatus(
         owner, repo, headSha,
-        'pending',
+        'failure',
         `${created} code review issue(s) must be resolved before merging`
       );
     }
