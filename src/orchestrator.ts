@@ -271,11 +271,15 @@ ${annotated}
 
     if (actionable.length === 0) {
       console.log('ℹ️  No high/medium issues — setting commit status to success');
-      await this.githubService.setCommitStatus(
-        owner, repo, headSha,
-        'success',
-        'No blocking code review issues found'
-      );
+      try {
+        await this.githubService.setCommitStatus(
+          owner, repo, headSha,
+          'success',
+          'No blocking code review issues found'
+        );
+      } catch {
+        console.warn('⚠️  Could not set commit status to success — review passed but status update failed');
+      }
       return 0;
     }
 
@@ -284,15 +288,25 @@ ${annotated}
       medium: 'priority: medium',
     };
 
+    // Cap at 10 to stay within GitHub secondary rate limits
+    const capped = actionable.slice(0, 10);
+    if (actionable.length > 10) {
+      console.warn(`⚠️  ${actionable.length} issues found; only creating the first 10 to avoid rate limits`);
+    }
+
     const results = await Promise.allSettled(
-      actionable.map(async (issue) => {
-        // Sanitize: strip newlines and control characters from the title
+      capped.map(async (issue) => {
+        // Strip control chars, newlines, and markdown-injection characters from title
         const shortMsg = issue.message
-          .replace(/[\r\n\t]+/g, ' ')
+          .replace(/[\r\n\t`<>]+/g, ' ')
           .trim()
           .slice(0, 69);
         const ellipsis = issue.message.trim().length > 69 ? '...' : '';
         const title = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
+
+        // Sanitize AI-generated body fields: neutralise @mentions and strip HTML tags
+        const sanitize = (s: string) =>
+          s.replace(/<[^>]*>/g, '').replace(/@(\w)/g, '[at]$1');
 
         const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
         const body = [
@@ -303,11 +317,11 @@ ${annotated}
           location,
           '',
           '## Problem',
-          issue.message,
+          sanitize(issue.message),
           '',
           '## Suggested Fix',
-          issue.suggestion,
-          ...(issue.example ? ['', '## Example', `\`\`\`\n${issue.example}\n\`\`\``] : []),
+          sanitize(issue.suggestion),
+          ...(issue.example ? ['', '## Example', `\`\`\`\n${sanitize(issue.example)}\n\`\`\``] : []),
         ].join('\n');
 
         await this.githubService.createIssue(owner, repo, title, body, [

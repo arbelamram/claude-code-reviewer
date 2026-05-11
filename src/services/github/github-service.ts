@@ -193,10 +193,11 @@ class GitHubService {
         body,
         labels,
       });
-      console.log(`✅ Created issue #${issue.number}: ${title}`);
+      console.log(`✅ Created issue #${issue.number}`);
       return issue.number;
     } catch (error) {
-      console.error('Error creating issue:', error instanceof Error ? error.message : String(error));
+      const safeMsg = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+      console.error('Error creating issue:', safeMsg);
       throw error;
     }
   }
@@ -225,7 +226,8 @@ class GitHubService {
       });
       console.log(`✅ Commit status set to "${state}": ${description}`);
     } catch (error) {
-      console.error('Error setting commit status:', error instanceof Error ? error.message : String(error));
+      const safeMsg = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+      console.error('Error setting commit status:', safeMsg);
       throw error;
     }
   }
