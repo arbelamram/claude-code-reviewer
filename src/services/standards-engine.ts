@@ -161,12 +161,13 @@ Return your analysis as JSON with this exact structure:
   "overallQuality": "excellent|good|fair|needs-improvement"
 }
 
-Code to review:
-\`\`\`${language}
+Code to review (each line is prefixed with its actual file line number, e.g. "L42+  code" means an added line at file line 42, "L42   code" means unchanged context at line 42, and "     -  code" means a removed line):
 ${codeToReview}
-\`\`\`
 
-IMPORTANT: For the location field, include the filename and line number where the issue occurs. Format: filepath:line_number
+IMPORTANT:
+- Use the "L<n>" prefix to determine the exact line number where the issue occurs.
+- For the location field, use the format: filepath:line_number (e.g. src/auth.ts:42).
+- Report the line number of the specific statement that is the problem, not a surrounding bracket or closing line.
 
 Return ONLY valid JSON, no other text.`;
   }

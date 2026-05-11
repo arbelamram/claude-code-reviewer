@@ -1,5 +1,5 @@
 import { StandardsEngine } from './services/standards-engine.js';
-import { AnalysisFormatter, type AnalysisResult } from './formatters/analysis-formatter.js';
+import { AnalysisFormatter, type AnalysisResult, type CodeIssue } from './formatters/analysis-formatter.js';
 import { GitHubService } from './services/github/github-service.js';
 import { GitHubConfigManager } from './services/github/github-config.js';
 import { ClaudeService } from './services/claude-service.js';
@@ -180,8 +180,19 @@ ${diff.patch || '(No patch content)'}
         comment: prComment,
       });
 
+      // Step 10: Create GitHub issues for high/medium severity problems and update commit status
+      console.log('📋 Creating GitHub issues for problems found...');
+      const issueCount = await this.createIssuesForProblems(
+        options.owner,
+        options.repo,
+        options.prNumber,
+        prContext.headSha,
+        analysis
+      );
+
       console.log(`\n✨ Code review complete for PR #${options.prNumber}!`);
       console.log(`   📌 Posted ${reviewComments.length} inline comment(s) on specific lines`);
+      console.log(`   🐛 Created ${issueCount} GitHub issue(s) for problems to fix`);
     } catch (error) {
       console.error('❌ Error during code review:', error);
       throw error;
@@ -189,26 +200,176 @@ ${diff.patch || '(No patch content)'}
   }
 
   /**
-   * Combine code from multiple files into a single string
+   * Parse a unified diff patch and annotate each line with its actual file line number.
+   * This lets Claude report exact line numbers instead of approximate ones from @@ headers.
+   *
+   * Output format per line:
+   *   L<n>+  <code>   — added line at file line n
+   *   L<n>   <code>   — context (unchanged) line at file line n
+   *        - <code>   — removed line (no right-side line number)
+   */
+  private annotatePatchLines(fileName: string, patch: string): string {
+    if (!patch) return `File: ${fileName}\n(No patch content)`;
+
+    const lines = patch.split('\n');
+    const out: string[] = [`File: ${fileName}`];
+    let rightLine = 0;
+
+    for (const raw of lines) {
+      const hunk = raw.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (hunk) {
+        rightLine = parseInt(hunk[1], 10) - 1;
+        out.push(raw);
+        continue;
+      }
+
+      if (raw.startsWith('+')) {
+        rightLine++;
+        out.push(`L${rightLine}+  ${raw.slice(1)}`);
+      } else if (raw.startsWith('-')) {
+        out.push(`     -  ${raw.slice(1)}`);
+      } else {
+        rightLine++;
+        out.push(`L${rightLine}   ${raw.slice(1)}`);
+      }
+    }
+
+    return out.join('\n');
+  }
+
+  /**
+   * Combine code from multiple files into a single string with annotated line numbers.
    */
   private prepareCombinedCode(diffs: any[]): string {
     const sections = diffs.map(diff => {
-      return `
-\`\`\`
-File: ${diff.fileName}
-Status: ${diff.status}
-Changes: +${diff.additions}/-${diff.deletions}
-\`\`\`
+      const annotated = this.annotatePatchLines(diff.fileName, diff.patch);
+      return `\`\`\`
+Status: ${diff.status} (+${diff.additions}/-${diff.deletions})
 
-${diff.patch || '(No patch content)'}
-`;
+${annotated}
+\`\`\``;
     });
 
     return sections.join('\n\n---\n\n');
   }
 
+  private static readonly SEVERITY_LABEL: Record<string, string> = {
+    high: 'priority: high',
+    medium: 'priority: medium',
+  };
+
+  private static readonly MAX_ISSUES_PER_RUN = 10;
+
   /**
-   * Call Claude API (to be implemented)
+   * Sanitize an AI-generated string before embedding it in a GitHub issue.
+   * Strips HTML tags, neutralises @mentions, and removes control characters.
+   */
+  private sanitizeForIssue(text: string): string {
+    return text
+      .replace(/<[^>]*>/g, '')            // strip HTML tags
+      .replace(/@(?=[a-zA-Z])/g, '[at]')  // neutralise @mentions
+      .replace(/[^\x09\x0A\x0D\x20-\x7E\x80-￿]/g, ''); // strip control chars
+  }
+
+  /**
+   * Format a single CodeIssue as a GitHub issue title + body.
+   */
+  private formatIssueContent(
+    issue: CodeIssue,
+    prNumber: number
+  ): { title: string; body: string } {
+    const shortMsg = issue.message
+      .replace(/[\r\n\t`<>]+/g, ' ')
+      .trim()
+      .slice(0, 69);
+    const ellipsis = issue.message.trim().length > 69 ? '...' : '';
+    const title = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
+
+    const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
+    const body = [
+      `> Auto-generated from code review on PR #${prNumber}`,
+      '',
+      `**Severity:** ${issue.severity}`,
+      `**Type:** ${issue.type}`,
+      location,
+      '',
+      '## Problem',
+      this.sanitizeForIssue(issue.message),
+      '',
+      '## Suggested Fix',
+      this.sanitizeForIssue(issue.suggestion),
+      ...(issue.example
+        ? ['', '## Example', `\`\`\`\n${this.sanitizeForIssue(issue.example)}\n\`\`\``]
+        : []),
+    ].join('\n');
+
+    return { title, body };
+  }
+
+  /**
+   * Create GitHub issues sequentially (avoids secondary rate limits) and
+   * then set the commit status to failure until all issues are resolved.
+   * Returns the number of issues successfully created.
+   */
+  private async createIssuesForProblems(
+    owner: string,
+    repo: string,
+    prNumber: number,
+    headSha: string,
+    analysis: AnalysisResult
+  ): Promise<number> {
+    const actionable = analysis.issues.filter(
+      i => i.severity === 'high' || i.severity === 'medium'
+    );
+
+    if (actionable.length === 0) {
+      console.log('ℹ️  No high/medium issues — setting commit status to success');
+      try {
+        await this.githubService.setCommitStatus(
+          owner, repo, headSha,
+          'success',
+          'No blocking code review issues found'
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`⚠️  Status update failed (review still passed): ${msg.slice(0, 120)}`);
+      }
+      return 0;
+    }
+
+    const capped = actionable.slice(0, CodeReviewOrchestrator.MAX_ISSUES_PER_RUN);
+    if (actionable.length > CodeReviewOrchestrator.MAX_ISSUES_PER_RUN) {
+      console.warn(`⚠️  ${actionable.length} issues found; capped at ${CodeReviewOrchestrator.MAX_ISSUES_PER_RUN} to respect rate limits`);
+    }
+
+    let created = 0;
+    for (const issue of capped) {
+      const { title, body } = this.formatIssueContent(issue, prNumber);
+      try {
+        await this.githubService.createIssue(owner, repo, title, body, [
+          'code-review',
+          CodeReviewOrchestrator.SEVERITY_LABEL[issue.severity],
+        ]);
+        created++;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`⚠️  Could not create issue: ${msg.slice(0, 120)}`);
+      }
+    }
+
+    if (created > 0) {
+      await this.githubService.setCommitStatus(
+        owner, repo, headSha,
+        'failure',
+        `${created} code review issue(s) must be resolved before merging`
+      );
+    }
+
+    return created;
+  }
+
+  /**
+   * Call Claude API
    */
   private async callClaudeAPI(prompt: string): Promise<string> {
     const claude = new ClaudeService(this.claudeApiKey);

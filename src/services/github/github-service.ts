@@ -17,6 +17,7 @@ interface PRContext {
   description: string;
   author: string;
   createdAt: string;
+  headSha: string;
 }
 
 interface CommentOptions {
@@ -98,6 +99,7 @@ class GitHubService {
         description: pr.body || '',
         author: pr.user?.login || 'unknown',
         createdAt: pr.created_at,
+        headSha: pr.head.sha,
       };
     } catch (error) {
       console.error('Error fetching PR context:', error);
@@ -169,6 +171,63 @@ class GitHubService {
       }
     } catch (error) {
       console.error('Error posting PR review comments:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create a GitHub issue
+   */
+  async createIssue(
+    owner: string,
+    repo: string,
+    title: string,
+    body: string,
+    labels?: string[]
+  ): Promise<number> {
+    try {
+      const { data: issue } = await this.octokit.issues.create({
+        owner,
+        repo,
+        title,
+        body,
+        labels,
+      });
+      console.log(`✅ Created issue #${issue.number}`);
+      return issue.number;
+    } catch (error) {
+      const safeMsg = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+      console.error('Error creating issue:', safeMsg);
+      throw error;
+    }
+  }
+
+  /**
+   * Set a commit status check (used to block/unblock PR merges).
+   * context should be a stable string like "code-review/issues" that matches
+   * the required status check configured in branch protection settings.
+   */
+  async setCommitStatus(
+    owner: string,
+    repo: string,
+    sha: string,
+    state: 'pending' | 'success' | 'failure' | 'error',
+    description: string,
+    context: string = 'code-review/issues'
+  ): Promise<void> {
+    try {
+      await this.octokit.repos.createCommitStatus({
+        owner,
+        repo,
+        sha,
+        state,
+        description,
+        context,
+      });
+      console.log(`✅ Commit status set to "${state}": ${description}`);
+    } catch (error) {
+      const safeMsg = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+      console.error('Error setting commit status:', safeMsg);
       throw error;
     }
   }
