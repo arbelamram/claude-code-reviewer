@@ -1,5 +1,6 @@
 # Claude Code Reviewer Standards Configuration
 # Define coding standards and rules to enforce
+# Last reviewed: 2026-05-13
 
 security:
   enabled: true
