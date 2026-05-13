@@ -139,7 +139,6 @@ Edit `config/standards.yaml` to enable/disable rules or adjust severity levels.
     resolve-check.yml     # Unblocks PR when all issues are resolved
 config/
   standards.yaml          # 21 coding standards rules
-  skill-definition.md     # Claude skill instructions
 src/
   formatters/
     analysis-formatter.ts # Parses Claude response → GitHub comments
@@ -174,10 +173,14 @@ Modern idioms, design patterns, testability, console logs in production
 
 ## Deploying to Another Project
 
-1. Copy `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo
-2. Add `GH_TOKEN` and `CLAUDE_API_KEY` secrets
-3. Copy `config/standards.yaml` and customize rules for your team
-4. Set up branch protection with `code-review/issues` as a required status check
+The workflows fetch the reviewer source code from this public repo at runtime — no source files need to be copied.
+
+1. Copy `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo's `.github/workflows/`
+2. Add `GH_TOKEN` and `CLAUDE_API_KEY` as repository secrets
+3. Set up branch protection with `code-review/issues` as a required status check
+4. Open a PR — the review runs automatically
+
+To use custom coding standards, fork this repo, update `config/standards.yaml`, and change the `repository:` reference in the checkout step of `code-review.yml` to point to your fork.
 
 ---
 

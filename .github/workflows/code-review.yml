@@ -44,15 +44,16 @@ jobs:
               context: 'code-review/issues',
             });
 
-      - name: Checkout code
+      - name: Checkout code reviewer
         uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-      
+          repository: arbelamram/claude-code-reviewer
+          ref: main
+
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
       
       - name: Install dependencies

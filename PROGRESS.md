@@ -32,7 +32,6 @@ code-reviewer/<br>
 │       └── resolve-check.yml       (Auto-unblock when issues resolved)<br>
 ├── config/<br>
 │   ├── analysis-schema.json        (Output format specification)<br>
-│   ├── skill-definition.md         (Claude skill instructions)<br>
 │   └── standards.yaml              (Coding standards - 21 rules)<br>
 ├── dist/                           (Compiled JavaScript - gitignored)<br>
 ├── src/<br>
