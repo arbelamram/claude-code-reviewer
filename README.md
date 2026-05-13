@@ -12,7 +12,7 @@ An AI-powered code review tool that automatically analyzes GitHub pull requests 
 
 ### Core Review
 - **Automatic PR Reviews** — Triggered on every pull request or manually via `workflow_dispatch`
-- **Configurable Standards** — Define your team's coding standards in YAML (21 built-in rules)
+- **Configurable Standards** — Define your team's coding standards in YAML (43 built-in rules)
 - **Intelligent Analysis** — Uses Claude Opus 4.6 to understand code intent, not just patterns
 - **Inline Comments** — Posts feedback directly on the exact offending line in the diff
 - **Summary Comment** — Full analysis overview posted as a PR comment
@@ -157,17 +157,17 @@ src/
 
 ## What It Reviews
 
-### Security (6 rules)
-SQL injection, hardcoded secrets, unsafe deserialization, auth gaps, XSS, input validation
+### Security (14 rules)
+SQL injection, hardcoded secrets, unsafe deserialization, auth gaps, XSS, input validation, resource leaks, weak cryptography, race conditions, template injection, default credentials, weak randomness, unvalidated redirects, path traversal
 
-### Performance (5 rules)
-N+1 queries, O(n²) algorithms, missing caching, memory leaks, unnecessary operations
+### Performance (8 rules)
+N+1 queries, O(n²) algorithms, missing caching, memory leaks, unnecessary operations, query optimisation, API rate limiting, batch processing
 
-### Style (5 rules)
-Naming conventions, function length, error handling, code duplication, documentation
+### Style (9 rules)
+Naming conventions, function length, error handling, code duplication, documentation, deep nesting, magic numbers, consistent spacing, dead code
 
-### Best Practices (4 rules)
-Modern idioms, design patterns, testability, console logs in production
+### Best Practices (12 rules)
+Modern idioms, design patterns, testability, console logs in production, error messages, logging levels, data exposure, dependency updates, backwards compatibility, concurrency safety, immutability, functional style
 
 ---
 
