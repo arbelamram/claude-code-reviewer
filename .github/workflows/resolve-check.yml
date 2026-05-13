@@ -38,7 +38,7 @@ jobs:
         # Pass step outputs through env variables to prevent script injection
         env:
           PR_NUMBER: ${{ steps.extract.outputs.pr_number }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const raw = process.env.PR_NUMBER || '';
@@ -78,7 +78,7 @@ jobs:
           steps.check.outputs.remaining == '0'
         env:
           HEAD_SHA: ${{ steps.check.outputs.head_sha }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             await github.rest.repos.createCommitStatus({
@@ -98,7 +98,7 @@ jobs:
         env:
           HEAD_SHA: ${{ steps.check.outputs.head_sha }}
           REMAINING: ${{ steps.check.outputs.remaining }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const remaining = parseInt(process.env.REMAINING, 10);
