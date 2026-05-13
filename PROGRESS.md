@@ -2,7 +2,7 @@
 
 **Project Start Date:** April 30, 2026  
 **Current Status:** Week 3 - Issue Tracking & Merge Control (COMPLETE)  
-**Last Updated:** May 11, 2026
+**Last Updated:** May 13, 2026
 
 ---
 
@@ -28,67 +28,67 @@ Building a reusable Claude skill that automatically reviews GitHub pull requests
 code-reviewer/<br>
 ├── .github/<br>
 │   └── workflows/<br>
-│       └── code-review.yml       (GitHub Actions workflow)<br>
+│       ├── code-review.yml         (Main review workflow)<br>
+│       └── resolve-check.yml       (Auto-unblock when issues resolved)<br>
 ├── config/<br>
-│   ├── analysis-schema.json      (Output format specification)<br>
-│   ├── skill-definition.md       (Claude skill instructions)<br>
-│   └── standards.yaml            (Coding standards - 21 rules)<br>
-├── dist/                         (Compiled JavaScript - gitignored)<br>
+│   ├── analysis-schema.json        (Output format specification)<br>
+│   ├── skill-definition.md         (Claude skill instructions)<br>
+│   └── standards.yaml              (Coding standards - 21 rules)<br>
+├── dist/                           (Compiled JavaScript - gitignored)<br>
 ├── src/<br>
-│   ├── github/<br>
-│   │   ├── github-config.ts      (GitHub configuration manager)<br>
-│   │   └── github-service.ts     (GitHub API wrapper)<br>
+│   ├── formatters/<br>
+│   │   └── analysis-formatter.ts   (Parses Claude response → GitHub comments)<br>
+│   ├── services/<br>
+│   │   ├── claude-service.ts       (Claude API client)<br>
+│   │   ├── standards-engine.ts     (Loads and manages standards)<br>
+│   │   └── github/<br>
+│   │       ├── github-config.ts    (GitHub configuration manager)<br>
+│   │       └── github-service.ts   (GitHub API wrapper)<br>
 │   ├── tests/<br>
 │   │   ├── test-claude-service.ts<br>
-│   │   ├── test-github.ts<br>
 │   │   ├── test-github-service.ts<br>
 │   │   ├── test-orchestrator-full.ts<br>
 │   │   └── test-orchestrator.ts<br>
-│   ├── analysis-formatter.ts     (Formats analysis output)<br>
-│   ├── claude-service.ts         (Claude API client)<br>
-│   ├── cli.ts                    (Command-line interface)<br>
-│   ├── index.ts                  (Main entry point)<br>
-│   ├── orchestrator.ts           (Main workflow orchestrator)<br>
-│   ├── skill-reviewer.ts         (Skill definition)<br>
-│   └── standards-engine.ts       (Loads and manages standards)<br>
-├── .env                          (Secrets - NOT in Git)<br>
-├── .env.example                  (Template for .env)<br>
-├── .gitignore                    (Git ignore rules)<br>
-├── package.json                  (Dependencies and scripts)<br>
-├── tsconfig.json                 (TypeScript configuration)<br>
-├── PROGRESS.md                   (This file)<br>
-└── README.md                     (Project documentation)
+│   ├── cli.ts                      (Command-line interface)<br>
+│   └── orchestrator.ts             (Main workflow orchestrator)<br>
+├── .env                            (Secrets - NOT in Git)<br>
+├── .env.example                    (Template for .env)<br>
+├── .gitignore<br>
+├── package.json<br>
+├── tsconfig.json<br>
+├── PROGRESS.md                     (This file)<br>
+└── README.md
 
 ### Core Components Built
 
-#### 1. **StandardsEngine** (`src/standards-engine.ts`)
+#### 1. **StandardsEngine** (`src/services/standards-engine.ts`)
 - ✅ Loads `standards.yaml` file
 - ✅ Parses 21 coding standards across 4 categories
 - ✅ Builds Claude prompts with enabled rules
 - ✅ Counts and displays enabled rules
 - ✅ **Status:** TESTED & WORKING
 
-#### 2. **AnalysisFormatter** (`src/analysis-formatter.ts`)
+#### 2. **AnalysisFormatter** (`src/formatters/analysis-formatter.ts`)
 - ✅ Parses Claude's JSON responses
 - ✅ Formats as GitHub PR comments (markdown)
 - ✅ Groups issues by severity (🔴 High, 🟡 Medium, 🟢 Low)
 - ✅ Generates statistics
 - ✅ **Status:** TESTED & WORKING
 
-#### 3. **GitHubService** (`src/github/github-service.ts`)
+#### 3. **GitHubService** (`src/services/github/github-service.ts`)
 - ✅ Connects to GitHub API using Octokit
 - ✅ Fetches PR diffs and context
 - ✅ Posts PR comments
 - ✅ Validates tokens
 - ✅ **Status:** TESTED & WORKING (authenticated as @arbelamram)
 
-#### 4. **GitHubConfigManager** (`src/github/github-config.ts`)
+#### 4. **GitHubConfigManager** (`src/services/github/github-config.ts`)
 - ✅ Loads GitHub config from `.env`
 - ✅ Validates required variables
 - ✅ Provides configuration getters
 - ✅ **Status:** TESTED & WORKING
 
-#### 5. **ClaudeService** (`src/claude-service.ts`)
+#### 5. **ClaudeService** (`src/services/claude-service.ts`)
 - ✅ Connects to Claude API (claude-opus-4-6)
 - ✅ Sends code review prompts
 - ✅ Receives JSON analysis
@@ -288,6 +288,31 @@ All changes tested and verified:
 
 ---
 
+---
+
+## ✅ WEEK 4 - END-TO-END TESTING & HOUSEKEEPING (May 13, 2026)
+
+### End-to-End Skill Validation
+- ✅ Created `feat/user-preferences-api` test branch with intentionally vulnerable code (`user-preferences.ts`)
+- ✅ Opened PR #66 and ran skill end-to-end via GitHub Actions
+- ✅ Skill correctly detected all issues: 4 SQL injections, hardcoded password, plaintext credential logging, weak session token, nested loop bug, missing error handling, `any` type
+- ✅ 22 inline comments posted on correct diff lines, 1 summary comment, 10 GitHub issues created (#77–#86), merge blocked via commit status
+- ✅ Test branch and all artifacts cleaned up after validation
+
+### GitHub Actions Node.js 24 Upgrade
+- ✅ `actions/checkout@v4` → `@v6`
+- ✅ `actions/setup-node@v4` → `@v5`
+- ✅ `actions/github-script@v7` → `@v8` (applied across both workflows)
+- ✅ Node.js 20 deprecation warning eliminated
+- ✅ **Status:** MERGED INTO MAIN
+
+### Codebase Cleanup
+- ✅ Removed stale dev artifact test files (`test-skill.ts`, `test-skill-mini.ts`, `test-github.ts`, `index.ts`)
+- ✅ Corrected all file paths in PROGRESS.md to reflect post-refactor structure
+- ✅ Updated README.md and PROGRESS.md dates
+
+---
+
 ## ⏳ FUTURE ENHANCEMENTS (Optional)
 
 ### Completed in Week 1
@@ -363,15 +388,15 @@ CLAUDE_API_KEY=sk-ant-...        # Anthropic API key
 ## 📊 Project Statistics
 
 - **Lines of Code:** ~3500+
-- **TypeScript Files:** 8 core + 5 tests
+- **TypeScript Files:** 7 core + 4 tests
 - **Configuration Files:** 3 (YAML, JSON, .env)
 - **Tests:** 5 (all passing)
 - **GitHub Commits:** 15+ (including feature branches)
 - **API Integrations:** 2 (GitHub + Claude)
 - **Coding Standards:** 21 rules
 - **Development Time:** 2 sessions (1 week)
-- **Version:** 1.1.0
-- **Status:** Production-ready with reliability enhancements
+- **Version:** 1.2.0
+- **Status:** Production-ready, end-to-end validated
 
 ---
 
@@ -429,4 +454,4 @@ CLAUDE_API_KEY=sk-ant-...        # Anthropic API key
 
 ---
 
-Generated: May 7, 2026 (Week 2 Complete - Version 1.1.0 READY FOR DEPLOYMENT)
+Generated: May 13, 2026 (Week 4 Complete - Version 1.2.0 — End-to-end validated)

@@ -203,4 +203,4 @@ Modern idioms, design patterns, testability, console logs in production
 
 ---
 
-**Last Updated:** May 11, 2026 | **Version:** 1.2.0
+**Last Updated:** May 13, 2026 | **Version:** 1.2.0
