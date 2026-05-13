@@ -11,6 +11,8 @@ jobs:
       contains(github.event.issue.labels.*.name, 'code-review') &&
       github.event.issue.user.login == 'github-actions[bot]'
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     permissions:
       issues: read
