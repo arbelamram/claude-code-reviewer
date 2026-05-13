@@ -74,7 +74,7 @@ Issue closed → resolve-check.yml → recount → success or failure
 
 ### Coding Standards (`config/standards.yaml`)
 
-The standards file defines 21 rules across 4 categories (security, performance, style, best-practices) plus language-specific rules. Each rule has:
+The standards file defines 43 rules across 4 categories (security, performance, style, best-practices) plus language-specific rules. Each rule has:
 - `enabled`: boolean to activate/deactivate
 - `severity`: high/medium/low (affects weighting in Claude's analysis)
 - `description`: what the rule checks
