@@ -171,15 +171,18 @@ class CodeReviewOrchestrator {
         audit.flush(),
         audit.flushStepSummary(),
       ]);
-      // flush() catches internally and returns false on failure — check value,
-      // not status, since rejections will never occur from that path.
+      // flush() catches internally and returns false on failure, so fulfilled+false
+      // is the normal error path. Rejections are unlikely but retained as a safety net
+      // in case an unexpected throw escapes (e.g. secretReplacer on a non-standard value).
       if (flushResult.status === 'fulfilled' && !flushResult.value) {
-        // Emit a GitHub Actions warning annotation so the data loss is visible
-        // in the workflow UI rather than buried in collapsed log output.
+        this.log.error('Audit log flush failed — audit trail is incomplete');
+        // GitHub Actions workflow commands require stdout to be surfaced in the UI.
+        // process.stdout.write is intentional here — Logger routes to console methods
+        // which the runner also parses, but direct write guarantees ordering with the
+        // annotation format the runner expects.
         if (process.env.GITHUB_ACTIONS === 'true') {
           process.stdout.write('::warning::Audit log flush failed — audit trail is incomplete\n');
         }
-        this.log.error('Audit log flush failed — audit trail is incomplete');
       } else if (flushResult.status === 'rejected') {
         this.log.error(`Audit flush unexpected error: ${this.safeErrorMessage(flushResult.reason)}`);
       }

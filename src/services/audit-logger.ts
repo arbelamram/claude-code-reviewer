@@ -189,6 +189,9 @@ class AuditLogger {
     revertible = false,
     revertInstructions?: string
   ): void {
+    if (this.flushPromise !== undefined) {
+      this.logger.warn('Audit: record() called after flush() — entry may not be persisted if serialization has already completed');
+    }
     if (this.auditData.entries.length >= AuditLogger.MAX_ENTRIES) {
       this.logger.warn(`Audit: entry limit (${AuditLogger.MAX_ENTRIES}) reached — entry dropped`);
       return;
@@ -207,9 +210,11 @@ class AuditLogger {
   // detect symlinks pointing outside the expected location. Logs a warning on
   // every rejection so callers can see why a flush path was silently skipped.
   // Residual TOCTOU risk: the symlink target could change between this check and
-  // the actual write. Fully eliminating this requires O_NOFOLLOW at the OS level.
-  // The prefix restriction plus AUDIT_FILE_MODE (0o600) provides adequate
-  // mitigation for trusted CI environments.
+  // the actual write in doFlush/doFlushStepSummary. Fully eliminating this requires
+  // opening the file with fsPromises.open() using O_NOFOLLOW | O_CREAT flags and
+  // writing to the resulting FileHandle — a larger refactor deferred given the
+  // trusted CI environment context. The prefix restriction plus AUDIT_FILE_MODE
+  // (0o600) provides adequate mitigation for the current use case.
   private isSafePath(p: string): boolean {
     if (!path.isAbsolute(p) || path.resolve(p) !== p) {
       this.logger.warn('Audit: path rejected — not absolute or contains traversal components');
@@ -261,8 +266,8 @@ class AuditLogger {
     const msg = err instanceof Error ? err.message : String(err);
     return msg
       .replace(/[^\x20-\x7E]/g, '')
-      .replace(/(?:\/[\w.\-]+){2,}/g, '[path]')        // Unix-style paths
-      .replace(/[A-Z]:\\(?:[\w.\-]+\\?)+/gi, '[path]') // Windows-style paths
+      .replace(/(?:\/\S+){2,}/g, '[path]')              // Unix-style paths (any non-whitespace segments)
+      .replace(/[A-Z]:\\(?:[\w.\- ]+\\?)+/gi, '[path]') // Windows-style paths (includes spaces)
       .slice(0, MAX_ERR_MESSAGE_CHARS);
   }
 
