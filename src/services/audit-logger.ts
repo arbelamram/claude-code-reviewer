@@ -33,6 +33,8 @@ interface AuditLog {
   entries: AuditEntry[];
 }
 
+const MAX_DETAIL_VALUE_LENGTH = 500;
+
 class AuditLogger {
   private readonly entries: AuditEntry[] = [];
   private readonly log: AuditLog;
@@ -95,8 +97,8 @@ class AuditLogger {
     if (!dest || !this.isSafePath(dest)) return;
     try {
       await fs.promises.writeFile(dest, JSON.stringify(this.log, null, 2), 'utf8');
-    } catch {
-      // Non-fatal — audit write failure should never abort a review.
+    } catch (err) {
+      console.warn('Audit log flush failed:', err);
     }
   }
 
@@ -107,8 +109,8 @@ class AuditLogger {
     if (!dest || !this.isSafePath(dest)) return;
     try {
       await fs.promises.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
-    } catch {
-      // Non-fatal — step summary failure should never abort a review.
+    } catch (err) {
+      console.warn('Step summary flush failed:', err);
     }
   }
 
@@ -142,7 +144,11 @@ class AuditLogger {
         lines.push('| Key | Value |');
         lines.push('|---|---|');
         for (const [k, v] of Object.entries(entry.details)) {
-          lines.push(`| ${s(k)} | \`${s(JSON.stringify(v))}\` |`);
+          const raw = JSON.stringify(v);
+          const truncated = raw.length > MAX_DETAIL_VALUE_LENGTH
+            ? raw.slice(0, MAX_DETAIL_VALUE_LENGTH) + '…'
+            : raw;
+          lines.push(`| ${s(k)} | \`${s(truncated)}\` |`);
         }
         if (entry.revertInstructions) {
           lines.push('', `**To revert:** ${s(entry.revertInstructions)}`);
