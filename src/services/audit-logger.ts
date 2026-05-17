@@ -36,8 +36,17 @@ interface AuditLog {
 class AuditLogger {
   private readonly entries: AuditEntry[] = [];
   private readonly log: AuditLog;
+  private readonly auditLogPath: string | undefined;
+  private readonly stepSummaryPath: string | undefined;
 
-  constructor(repository: string, prNumber: number) {
+  constructor(
+    repository: string,
+    prNumber: number,
+    auditLogPath: string | undefined  = process.env.AUDIT_LOG_PATH,
+    stepSummaryPath: string | undefined = process.env.GITHUB_STEP_SUMMARY
+  ) {
+    this.auditLogPath    = auditLogPath;
+    this.stepSummaryPath = stepSummaryPath;
     this.log = {
       skillName:  'claude-code-reviewer',
       runId:      process.env.GITHUB_RUN_ID ?? 'local',
@@ -69,11 +78,20 @@ class AuditLogger {
     return path.isAbsolute(p) && path.resolve(p) === p;
   }
 
+  // Escapes characters that would break a markdown table cell or inject HTML.
+  private sanitizeMd(value: string): string {
+    return value
+      .replace(/[\r\n]/g, ' ')
+      .replace(/\|/g, '\\|')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
   // Writes the audit JSON to the path in AUDIT_LOG_PATH (if set).
   // The workflow uploads this file as a GitHub Actions artifact so Claude
   // can retrieve it later via: gh run download <runId> -n code-reviewer-audit
   async flush(): Promise<void> {
-    const dest = process.env.AUDIT_LOG_PATH;
+    const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return;
     try {
       await fs.promises.writeFile(dest, JSON.stringify(this.log, null, 2), 'utf8');
@@ -85,7 +103,7 @@ class AuditLogger {
   // Appends the markdown audit summary to $GITHUB_STEP_SUMMARY (if set).
   // The summary is visible in the Actions UI under the workflow run.
   async flushStepSummary(): Promise<void> {
-    const dest = process.env.GITHUB_STEP_SUMMARY;
+    const dest = this.stepSummaryPath;
     if (!dest || !this.isSafePath(dest)) return;
     try {
       await fs.promises.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
@@ -96,16 +114,17 @@ class AuditLogger {
 
   toMarkdown(): string {
     const { skillName, runId, startedAt, repository, prNumber, entries } = this.log;
+    const s = this.sanitizeMd.bind(this);
 
     const lines = [
       `## 🗒️ ${skillName} — Audit Log`,
       '',
       `| Field | Value |`,
       `|---|---|`,
-      `| Repository | \`${repository}\` |`,
+      `| Repository | \`${s(repository)}\` |`,
       `| PR | #${prNumber} |`,
-      `| Run ID | \`${runId}\` |`,
-      `| Started | ${startedAt} |`,
+      `| Run ID | \`${s(runId)}\` |`,
+      `| Started | ${s(startedAt)} |`,
       '',
     ];
 
@@ -119,14 +138,14 @@ class AuditLogger {
       lines.push('### Actions taken', '');
       for (const entry of entries) {
         const icon = entry.revertible ? '↩️' : '📌';
-        lines.push(`#### ${icon} \`${entry.type}\` — ${entry.timestamp}`, '');
+        lines.push(`#### ${icon} \`${entry.type}\` — ${s(entry.timestamp)}`, '');
         lines.push('| Key | Value |');
         lines.push('|---|---|');
         for (const [k, v] of Object.entries(entry.details)) {
-          lines.push(`| ${k} | \`${JSON.stringify(v)}\` |`);
+          lines.push(`| ${s(k)} | \`${s(JSON.stringify(v))}\` |`);
         }
         if (entry.revertInstructions) {
-          lines.push('', `**To revert:** ${entry.revertInstructions}`);
+          lines.push('', `**To revert:** ${s(entry.revertInstructions)}`);
         }
         lines.push('');
       }
