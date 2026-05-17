@@ -45,6 +45,11 @@ interface AuditLoggerOptions {
   fileSystem?: FileSystem;
   now?: () => Date;           // injectable clock for deterministic tests
   secretPatterns?: RegExp[];  // additional patterns to redact beyond the built-in list
+  // When non-empty, isSafePath also requires paths to start with one of these
+  // prefixes. Provide the known-safe directories for the runtime environment
+  // (e.g. ['/tmp/', runnerTemp + '/']) to guard against symlink attacks and
+  // misconfigured env vars.
+  allowedPathPrefixes?: string[];
 }
 
 // _CHARS suffix makes the unit explicit at the declaration site.
@@ -57,8 +62,9 @@ const MAX_ERR_MESSAGE_CHARS  = 200;
  *
  * Lifecycle: construct → record() (zero or more times) → flush() / flushStepSummary()
  * Not thread-safe — intended for single-threaded, single-run use within Node.js.
- * flush() and flushStepSummary() are each idempotent: subsequent calls return
- * false without writing so concurrent callers do not interleave writes.
+ * flush() and flushStepSummary() are each idempotent via promise memoization:
+ * concurrent async callers receive the same Promise and the underlying write
+ * executes exactly once.
  */
 class AuditLogger {
   private readonly auditData: AuditLog;
@@ -70,8 +76,11 @@ class AuditLogger {
   // Merged at construction so no per-call spread; caller patterns are cloned
   // via new RegExp(source, flags) to neutralise any external lastIndex state.
   private readonly allSecretPatterns: RegExp[];
-  private auditFlushed = false;
-  private summaryFlushed = false;
+  private readonly allowedPrefixes: string[];
+  // Promise memoization — concurrent callers share the same Promise so the
+  // write executes exactly once regardless of how many callers await it.
+  private flushPromise: Promise<boolean> | undefined;
+  private summaryPromise: Promise<boolean> | undefined;
 
   // Built-in patterns cover the most common CI secret formats.
   private static readonly SECRET_PATTERNS: RegExp[] = [
@@ -105,11 +114,12 @@ class AuditLogger {
     const {
       auditLogPath,
       stepSummaryPath,
-      runId          = 'local',
-      logger         = new Logger(),
-      fileSystem     = fs.promises,
-      now            = () => new Date(),
-      secretPatterns = [],
+      runId              = 'local',
+      logger             = new Logger(),
+      fileSystem         = fs.promises,
+      now                = () => new Date(),
+      secretPatterns     = [],
+      allowedPathPrefixes = [],
     } = options;
 
     this.auditLogPath    = auditLogPath;
@@ -117,6 +127,7 @@ class AuditLogger {
     this.logger          = logger;
     this.fileSystem      = fileSystem;
     this.now             = now;
+    this.allowedPrefixes = allowedPathPrefixes;
     this.allSecretPatterns = [
       ...AuditLogger.SECRET_PATTERNS,
       ...secretPatterns.map(p => new RegExp(p.source, p.flags)),
@@ -147,10 +158,14 @@ class AuditLogger {
   }
 
   // Rejects paths with traversal components (e.g. /tmp/../etc/passwd).
-  // path.resolve normalises the path; if the result differs, it contained "..".
-  // Note: does not guard against symlinks — callers operate in trusted CI environments.
+  // When allowedPrefixes is set, also verifies the path starts with a known-safe
+  // prefix, guarding against symlinks that resolve outside the expected directory.
   private isSafePath(p: string): boolean {
-    return path.isAbsolute(p) && path.resolve(p) === p;
+    if (!path.isAbsolute(p) || path.resolve(p) !== p) return false;
+    if (this.allowedPrefixes.length > 0) {
+      return this.allowedPrefixes.some(prefix => p.startsWith(prefix));
+    }
+    return true;
   }
 
   // Escapes characters that would break a markdown table cell or inject HTML.
@@ -221,7 +236,7 @@ class AuditLogger {
   }
 
   // Bound arrow property so it can be passed directly to JSON.stringify without
-  // an arrow wrapper in flush(), keeping this-binding unambiguous.
+  // an arrow wrapper in doFlush(), keeping this-binding unambiguous.
   private readonly secretReplacer = (_key: string, value: unknown): unknown => {
     return typeof value === 'string' ? this.redactString(value) : value;
   };
@@ -229,10 +244,21 @@ class AuditLogger {
   // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
   // so other processes on shared CI runners cannot read it.
   // Retrieve later via: gh run download <runId> -n code-reviewer-audit
-  // Idempotent — subsequent calls return false without writing.
+  // Idempotent via promise memoization — concurrent callers share the same Promise.
   async flush(): Promise<boolean> {
-    if (this.auditFlushed) return false;
-    this.auditFlushed = true;
+    this.flushPromise = this.flushPromise ?? this.doFlush();
+    return this.flushPromise;
+  }
+
+  // Appends the markdown audit summary to stepSummaryPath (if set and safe).
+  // The summary is visible in the Actions UI under the workflow run.
+  // Idempotent via promise memoization — concurrent callers share the same Promise.
+  async flushStepSummary(): Promise<boolean> {
+    this.summaryPromise = this.summaryPromise ?? this.doFlushStepSummary();
+    return this.summaryPromise;
+  }
+
+  private async doFlush(): Promise<boolean> {
     const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
@@ -248,12 +274,7 @@ class AuditLogger {
     }
   }
 
-  // Appends the markdown audit summary to stepSummaryPath (if set and safe).
-  // The summary is visible in the Actions UI under the workflow run.
-  // Idempotent — subsequent calls return false without writing.
-  async flushStepSummary(): Promise<boolean> {
-    if (this.summaryFlushed) return false;
-    this.summaryFlushed = true;
+  private async doFlushStepSummary(): Promise<boolean> {
     const dest = this.stepSummaryPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {

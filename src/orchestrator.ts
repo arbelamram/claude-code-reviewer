@@ -130,10 +130,15 @@ class CodeReviewOrchestrator {
     this.log.info(`\n🚀 Starting Code Review for PR #${options.prNumber}`);
     this.log.info(`📍 Repository: ${options.owner}/${options.repo}\n`);
 
+    // Restrict writable paths to known-safe CI directories so misconfigured env
+    // vars and symlink attacks cannot redirect writes outside /tmp or RUNNER_TEMP.
+    const allowedPathPrefixes: string[] = ['/tmp/'];
+    if (process.env.RUNNER_TEMP) allowedPathPrefixes.push(process.env.RUNNER_TEMP + '/');
     const audit = new AuditLogger(`${options.owner}/${options.repo}`, options.prNumber, {
       auditLogPath: process.env.AUDIT_LOG_PATH,
       stepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
       runId: process.env.GITHUB_RUN_ID,
+      allowedPathPrefixes,
     });
     try {
       const { prContext, diffs } = await this.fetchPRData(options);
@@ -166,11 +171,22 @@ class CodeReviewOrchestrator {
         audit.flush(),
         audit.flushStepSummary(),
       ]);
-      if (flushResult.status === 'rejected') {
-        this.log.error(`Audit flush error: ${this.safeErrorMessage(flushResult.reason)}`);
+      // flush() catches internally and returns false on failure — check value,
+      // not status, since rejections will never occur from that path.
+      if (flushResult.status === 'fulfilled' && !flushResult.value) {
+        // Emit a GitHub Actions warning annotation so the data loss is visible
+        // in the workflow UI rather than buried in collapsed log output.
+        if (process.env.GITHUB_ACTIONS === 'true') {
+          process.stdout.write('::warning::Audit log flush failed — audit trail is incomplete\n');
+        }
+        this.log.error('Audit log flush failed — audit trail is incomplete');
+      } else if (flushResult.status === 'rejected') {
+        this.log.error(`Audit flush unexpected error: ${this.safeErrorMessage(flushResult.reason)}`);
       }
-      if (summaryResult.status === 'rejected') {
-        this.log.error(`Step summary flush error: ${this.safeErrorMessage(summaryResult.reason)}`);
+      if (summaryResult.status === 'fulfilled' && !summaryResult.value) {
+        this.log.warn('Step summary flush failed — summary will not appear in Actions UI');
+      } else if (summaryResult.status === 'rejected') {
+        this.log.error(`Step summary flush unexpected error: ${this.safeErrorMessage(summaryResult.reason)}`);
       }
     }
   }
