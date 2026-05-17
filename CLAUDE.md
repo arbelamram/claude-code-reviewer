@@ -94,9 +94,15 @@ See `.env.example` for the template. In GitHub Actions, these are configured as 
 
 ## Standards-Aware Development
 
-When planning or implementing any code change in this repository, read `config/standards.yaml` first and design the solution to satisfy all enabled rules across every category (security, performance, best-practices, style). The rules are the source of truth for what correct code looks like here — internalise them at the design stage, not after the fact.
+For every fix, bug, or feature — follow this three-step gate before pushing:
 
-The skill's GitHub CI review acts as a double-check. If it finds a violation, it means the design phase missed something — not that the fix should happen in a follow-up push.
+1. **Before writing code**: Read `config/standards.yaml`. Design the solution so it satisfies all enabled rules across every category (security, performance, best-practices, style). The rules are the source of truth — internalise them at the design stage, not after the fact.
+
+2. **After writing code**: Re-read the changed lines against each relevant rule category. If any rule is violated, redesign and rewrite the fix before committing. Do not push code that conflicts with the standards.
+
+3. **If CI finds a violation**: It means the design phase missed something. Redesign from step 1 — do not patch the symptom with a minimal edit that risks introducing a new violation in the same pass.
+
+The skill's GitHub CI review is a double-check, not the primary gate. Shipping a fix that passes CI on the second or third attempt is a sign the standards check in step 1 was skipped.
 
 ## Common Development Tasks
 
