@@ -1,9 +1,18 @@
 import { StandardsEngine } from './services/standards-engine.js';
 import { AnalysisFormatter, type AnalysisResult, type CodeIssue } from './formatters/analysis-formatter.js';
-import { GitHubService } from './services/github/github-service.js';
+import { GitHubService, type PRDiff } from './services/github/github-service.js';
 import { GitHubConfigManager } from './services/github/github-config.js';
 import { ClaudeService } from './services/claude-service.js';
 import * as path from 'path';
+
+// ── Module-level constants ──────────────────────────────────────────────────
+
+const DEFAULT_MAX_PROMPT_TOKENS    = 150_000;
+const DEFAULT_TARGET_PROMPT_TOKENS = 100_000;
+const MAX_ISSUE_TITLE_LENGTH       = 69;
+const ISSUE_CREATION_DELAY_MS      = 1_000;
+
+// ── Interfaces ─────────────────────────────────────────────────────────────
 
 interface ReviewOptions {
   owner: string;
@@ -12,30 +21,40 @@ interface ReviewOptions {
   claudeApiKey: string;
 }
 
-// Injected at construction time so call sites never read process.env directly.
+// Injected at construction time — decouples call sites from process.env
+// and makes the class testable without environment side-effects.
 interface OrchestratorConfig {
   issueCreationEnabled: boolean;
   maxPromptTokens: number;
   targetPromptTokens: number;
+  standardsPath?: string; // override for testing without the filesystem default
 }
 
 function loadConfig(): OrchestratorConfig {
+  const parseEnvInt = (name: string, fallback: number): number => {
+    const raw = process.env[name];
+    if (!raw) return fallback;
+    const parsed = parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  };
+
   return {
     issueCreationEnabled: process.env.ENABLE_ISSUE_CREATION === 'true',
-    maxPromptTokens: 150000,
-    targetPromptTokens: 100000,
+    maxPromptTokens:    parseEnvInt('MAX_PROMPT_TOKENS',    DEFAULT_MAX_PROMPT_TOKENS),
+    targetPromptTokens: parseEnvInt('TARGET_PROMPT_TOKENS', DEFAULT_TARGET_PROMPT_TOKENS),
   };
 }
+
+// ── Orchestrator ───────────────────────────────────────────────────────────
 
 class CodeReviewOrchestrator {
   private standardsEngine: StandardsEngine;
   private githubService: GitHubService;
-  private configManager: GitHubConfigManager;
   private claudeApiKey: string;
   private readonly config: OrchestratorConfig;
 
   private static readonly SEVERITY_LABEL: Record<string, string> = {
-    high: 'priority: high',
+    high:   'priority: high',
     medium: 'priority: medium',
   };
 
@@ -47,27 +66,36 @@ class CodeReviewOrchestrator {
   };
 
   constructor(claudeApiKey: string, config: OrchestratorConfig = loadConfig()) {
-    const standardsPath = path.join(process.cwd(), 'config/standards.yaml');
+    const standardsPath = config.standardsPath ?? path.join(process.cwd(), 'config/standards.yaml');
     this.standardsEngine = new StandardsEngine(standardsPath);
     this.standardsEngine.loadStandards();
 
-    this.configManager = new GitHubConfigManager();
-    const githubToken = this.configManager.getToken();
+    const configManager = new GitHubConfigManager();
+    let githubToken: string;
+    try {
+      githubToken = configManager.getToken();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      throw new Error(`Failed to load GitHub token: ${msg}`);
+    }
+
     this.githubService = new GitHubService(githubToken);
-    this.claudeApiKey = claudeApiKey;
-    this.config = config;
+    this.claudeApiKey  = claudeApiKey;
+    this.config        = config;
   }
 
   // ── Main workflow ──────────────────────────────────────────────────────────
 
   async reviewPullRequest(options: ReviewOptions): Promise<void> {
+    this.validateOptions(options);
+
     console.log(`\n🚀 Starting Code Review for PR #${options.prNumber}`);
     console.log(`📍 Repository: ${options.owner}/${options.repo}\n`);
 
     try {
       const { prContext, diffs } = await this.fetchPRData(options);
-      const analysis = await this.analyseCode(diffs);
-      const inlineCount = await this.postResults(options, analysis);
+      const analysis             = await this.analyseCode(diffs);
+      const inlineCount          = await this.postResults(options, analysis);
 
       let issueCount = 0;
       if (this.config.issueCreationEnabled) {
@@ -86,9 +114,26 @@ class CodeReviewOrchestrator {
         console.log(`   ℹ️  Issue creation disabled — commit status reflects review outcome`);
       }
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = error instanceof Error ? error.message : 'Unexpected error';
       console.error(`❌ Code review failed for PR #${options.prNumber}: ${msg.slice(0, 200)}`);
       throw new Error(`Code review failed for PR #${options.prNumber}: ${msg}`);
+    }
+  }
+
+  // ── Validation ─────────────────────────────────────────────────────────────
+
+  private validateOptions(options: ReviewOptions): void {
+    if (!options.owner || typeof options.owner !== 'string') {
+      throw new Error('Invalid ReviewOptions: owner must be a non-empty string');
+    }
+    if (!options.repo || typeof options.repo !== 'string') {
+      throw new Error('Invalid ReviewOptions: repo must be a non-empty string');
+    }
+    if (!Number.isInteger(options.prNumber) || options.prNumber <= 0) {
+      throw new Error('Invalid ReviewOptions: prNumber must be a positive integer');
+    }
+    if (!options.claudeApiKey || typeof options.claudeApiKey !== 'string') {
+      throw new Error('Invalid ReviewOptions: claudeApiKey must be a non-empty string');
     }
   }
 
@@ -99,8 +144,11 @@ class CodeReviewOrchestrator {
     const prContext = await this.githubService.getPRContext(
       options.owner, options.repo, options.prNumber
     );
-    console.log(`✅ PR Title: ${prContext.title}`);
-    console.log(`✅ Author: @${prContext.author}\n`);
+
+    // Strip control characters before logging user-controlled strings
+    const safeTitle  = prContext.title.replace(/[\r\n\t]/g, ' ').slice(0, 200);
+    const safeAuthor = prContext.author.replace(/[^a-zA-Z0-9_\-.]/g, '').slice(0, 100);
+    console.log(`✅ PR: "${safeTitle}" by @${safeAuthor}\n`);
 
     console.log('📝 Fetching code changes...');
     const diffs = await this.githubService.getPRDiff(
@@ -113,20 +161,15 @@ class CodeReviewOrchestrator {
 
   // ── Analyse phase ──────────────────────────────────────────────────────────
 
-  private async analyseCode(diffs: any[]): Promise<AnalysisResult> {
-    console.log('🔨 Preparing code for analysis...');
+  private async analyseCode(diffs: PRDiff[]): Promise<AnalysisResult> {
     const combinedCode = this.prepareCombinedCode(diffs);
-    console.log(`✅ Code prepared (${combinedCode.length} characters)\n`);
+    console.log(`🔨 Code prepared (${combinedCode.length} chars) — building prompt...`);
 
-    console.log('📊 Building analysis prompt with standards...');
     let prompt = this.standardsEngine.buildPrompt(combinedCode, 'mixed');
-    console.log(`✅ Prompt ready (${prompt.length} characters)\n`);
-
-    console.log('📏 Validating prompt size...');
     const validation = this.validatePromptSize(prompt, diffs);
     prompt = validation.prompt;
     if (validation.truncated) {
-      console.warn('⚠️ Note: Large PR was truncated to fit context window\n');
+      console.warn('⚠️ Large PR truncated to fit context window\n');
     }
 
     console.log('🤖 Sending to Claude for analysis...');
@@ -139,27 +182,27 @@ class CodeReviewOrchestrator {
   // ── Post results phase ─────────────────────────────────────────────────────
 
   private async postResults(options: ReviewOptions, analysis: AnalysisResult): Promise<number> {
-    const prComment = AnalysisFormatter.formatForPRComment(analysis);
+    const prComment     = AnalysisFormatter.formatForPRComment(analysis);
     const reviewComments = AnalysisFormatter.convertToReviewComments(analysis);
 
     console.log('📤 Posting review to GitHub...');
     if (reviewComments.length > 0) {
       await this.githubService.postPRReview({
-        owner: options.owner,
-        repo: options.repo,
+        owner:    options.owner,
+        repo:     options.repo,
         prNumber: options.prNumber,
         comments: reviewComments,
-        summary: '📋 Inline code review comments posted below',
+        summary:  '📋 Inline code review comments posted below',
       });
     }
 
-    console.log('💬 Posting summary comment...');
     await this.githubService.postPRComment({
-      owner: options.owner,
-      repo: options.repo,
+      owner:    options.owner,
+      repo:     options.repo,
       prNumber: options.prNumber,
-      comment: prComment,
+      comment:  prComment,
     });
+    console.log(`✅ Summary comment posted (${reviewComments.length} inline comment(s))\n`);
 
     return reviewComments.length;
   }
@@ -188,7 +231,7 @@ class CodeReviewOrchestrator {
         );
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
       console.warn(`⚠️  Commit status update failed: ${msg.slice(0, 120)}`);
     }
   }
@@ -215,7 +258,7 @@ class CodeReviewOrchestrator {
           'No blocking code review issues found'
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : 'Unknown error';
         console.warn(`⚠️  Status update failed (review still passed): ${msg.slice(0, 120)}`);
       }
       return 0;
@@ -238,9 +281,11 @@ class CodeReviewOrchestrator {
         ]);
         created++;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : 'Unknown error';
         console.warn(`⚠️  Could not create issue: ${msg.slice(0, 120)}`);
       }
+      // Delay between requests to avoid GitHub secondary rate limits
+      await new Promise<void>(resolve => setTimeout(resolve, ISSUE_CREATION_DELAY_MS));
     }
 
     if (created > 0) {
@@ -251,7 +296,7 @@ class CodeReviewOrchestrator {
           `${created} code review issue(s) must be resolved before merging`
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = err instanceof Error ? err.message : 'Unknown error';
         console.warn(`⚠️  Status update failed: ${msg.slice(0, 120)}`);
       }
     }
@@ -265,7 +310,7 @@ class CodeReviewOrchestrator {
     return Math.ceil(text.length / 4);
   }
 
-  private validatePromptSize(prompt: string, diffs: any[]): { prompt: string; truncated: boolean } {
+  private validatePromptSize(prompt: string, diffs: PRDiff[]): { prompt: string; truncated: boolean } {
     const estimatedTokens = this.estimateTokens(prompt);
 
     if (estimatedTokens <= this.config.targetPromptTokens) {
@@ -276,6 +321,9 @@ class CodeReviewOrchestrator {
     if (estimatedTokens > this.config.maxPromptTokens) {
       console.warn(`⚠️ Prompt exceeds max tokens (${estimatedTokens} > ${this.config.maxPromptTokens})`);
       console.log('🔪 Truncating code changes to fit context window...');
+
+      // Compute fixed standards overhead once so the loop stays O(n) instead of O(n×m).
+      const overheadTokens = this.estimateTokens(this.standardsEngine.buildPrompt('', 'mixed'));
 
       let truncatedCode = '';
       let filesIncluded = 0;
@@ -289,8 +337,8 @@ Changes: +${diff.additions}/-${diff.deletions}
 
 ${diff.patch || '(No patch content)'}
 `;
-        const testPrompt = this.standardsEngine.buildPrompt(truncatedCode + fileSection, 'mixed');
-        if (this.estimateTokens(testPrompt) <= this.config.targetPromptTokens) {
+        const projectedTokens = overheadTokens + this.estimateTokens(truncatedCode + fileSection);
+        if (projectedTokens <= this.config.targetPromptTokens) {
           truncatedCode += fileSection + '\n\n---\n\n';
           filesIncluded++;
         } else {
@@ -298,14 +346,13 @@ ${diff.patch || '(No patch content)'}
         }
       }
 
-      const newPrompt = this.standardsEngine.buildPrompt(truncatedCode, 'mixed');
-      console.warn(`⚠️ Included ${filesIncluded}/${diffs.length} files (${this.estimateTokens(newPrompt)} tokens)`);
-
       if (filesIncluded === 0) {
         console.error('❌ Even the smallest file exceeds token limit');
         return { prompt, truncated: true };
       }
 
+      const newPrompt = this.standardsEngine.buildPrompt(truncatedCode, 'mixed');
+      console.warn(`⚠️ Included ${filesIncluded}/${diffs.length} files (${this.estimateTokens(newPrompt)} tokens)`);
       return { prompt: newPrompt, truncated: true };
     }
 
@@ -342,7 +389,7 @@ ${diff.patch || '(No patch content)'}
     return out.join('\n');
   }
 
-  private prepareCombinedCode(diffs: any[]): string {
+  private prepareCombinedCode(diffs: PRDiff[]): string {
     const sections = diffs.map(diff => {
       const annotated = this.annotatePatchLines(diff.fileName, diff.patch);
       return `\`\`\`
@@ -357,15 +404,15 @@ ${annotated}
 
   private sanitizeForIssue(text: string): string {
     return text
-      .replace(/<[^>]*>/g, '')
-      .replace(/@(?=[a-zA-Z])/g, '[at]')
-      .replace(/[^\x09\x0A\x0D\x20-\x7E\x80-￿]/g, '');
+      .replace(/<[^>]*>/g, '')              // strip HTML tags to prevent injection
+      .replace(/@(?=[a-zA-Z])/g, '[at]')    // neutralise @mentions so GitHub doesn't notify users
+      .replace(/[^\x09\x0A\x0D\x20-\x7E\x80-￿]/g, ''); // remove non-printable control characters
   }
 
   private formatIssueContent(issue: CodeIssue, prNumber: number): { title: string; body: string } {
-    const shortMsg = issue.message.replace(/[\r\n\t`<>]+/g, ' ').trim().slice(0, 69);
-    const ellipsis = issue.message.trim().length > 69 ? '...' : '';
-    const title = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
+    const shortMsg = issue.message.replace(/[\r\n\t`<>]+/g, ' ').trim().slice(0, MAX_ISSUE_TITLE_LENGTH);
+    const ellipsis = issue.message.trim().length > MAX_ISSUE_TITLE_LENGTH ? '...' : '';
+    const title    = `[Code Review] ${issue.type}: ${shortMsg}${ellipsis}`;
 
     const location = issue.location ? `\n**Location:** \`${issue.location}\`` : '';
     const body = [
