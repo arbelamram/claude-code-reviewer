@@ -38,19 +38,18 @@ interface AuditLog {
 type FileSystem = Pick<typeof fs.promises, 'writeFile' | 'appendFile'>;
 
 interface AuditLoggerOptions {
-  auditLogPath?:    string;
+  auditLogPath?: string;
   stepSummaryPath?: string;
-  runId?:           string;
-  logger?:          Logger;
-  fileSystem?:      FileSystem;
-  now?:             () => Date;  // injectable clock for deterministic tests
-  secretPatterns?:  RegExp[];    // additional patterns to redact beyond the built-in list
+  runId?: string;
+  logger?: Logger;
+  fileSystem?: FileSystem;
+  now?: () => Date;           // injectable clock for deterministic tests
+  secretPatterns?: RegExp[];  // additional patterns to redact beyond the built-in list
 }
 
-// 500 chars keeps individual table cells readable while preventing step-summary bloat.
-const MAX_DETAIL_VALUE_LENGTH = 500;
-// 200 chars captures enough of an error message to be actionable without leaking stack traces.
-const MAX_ERR_MESSAGE_LENGTH  = 200;
+// _CHARS suffix makes the unit explicit at the declaration site.
+const MAX_DETAIL_VALUE_CHARS = 500;
+const MAX_ERR_MESSAGE_CHARS  = 200;
 
 /**
  * Records and persists a tamper-evident log of all repository-state actions
@@ -58,6 +57,8 @@ const MAX_ERR_MESSAGE_LENGTH  = 200;
  *
  * Lifecycle: construct → record() (zero or more times) → flush() / flushStepSummary()
  * Not thread-safe — intended for single-threaded, single-run use within Node.js.
+ * flush() and flushStepSummary() are each idempotent: subsequent calls return
+ * false without writing so concurrent callers do not interleave writes.
  */
 class AuditLogger {
   private readonly auditData: AuditLog;
@@ -69,14 +70,16 @@ class AuditLogger {
   // Merged at construction so no per-call spread; caller patterns are cloned
   // via new RegExp(source, flags) to neutralise any external lastIndex state.
   private readonly allSecretPatterns: RegExp[];
+  private auditFlushed = false;
+  private summaryFlushed = false;
 
   // Built-in patterns cover the most common CI secret formats.
   private static readonly SECRET_PATTERNS: RegExp[] = [
-    /ghp_[a-zA-Z0-9]{36}/g,            // GitHub classic PAT
-    /ghs_[a-zA-Z0-9]{36}/g,            // GitHub Actions token
-    /github_pat_[a-zA-Z0-9_]{82}/g,    // GitHub fine-grained PAT
-    /\bsk-[a-zA-Z0-9]{32,}\b/g,        // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
-    /Bearer\s+\S{20,}/gi,              // generic Bearer token
+    /ghp_[a-zA-Z0-9]{36}/g,           // GitHub classic PAT
+    /ghs_[a-zA-Z0-9]{36}/g,           // GitHub Actions token
+    /github_pat_[a-zA-Z0-9_]{82}/g,   // GitHub fine-grained PAT
+    /\bsk-[a-zA-Z0-9]{32,}\b/g,       // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
+    /Bearer\s+\S{20,}/gi,             // generic Bearer token
   ];
 
   // Allowlist of detail keys permitted in audit entries. Fields outside this
@@ -109,11 +112,11 @@ class AuditLogger {
       secretPatterns = [],
     } = options;
 
-    this.auditLogPath      = auditLogPath;
-    this.stepSummaryPath   = stepSummaryPath;
-    this.logger            = logger;
-    this.fileSystem        = fileSystem;
-    this.now               = now;
+    this.auditLogPath    = auditLogPath;
+    this.stepSummaryPath = stepSummaryPath;
+    this.logger          = logger;
+    this.fileSystem      = fileSystem;
+    this.now             = now;
     this.allSecretPatterns = [
       ...AuditLogger.SECRET_PATTERNS,
       ...secretPatterns.map(p => new RegExp(p.source, p.flags)),
@@ -124,7 +127,7 @@ class AuditLogger {
       startedAt: this.now().toISOString(),
       repository,
       prNumber,
-      entries:   [],
+      entries: [],
     };
   }
 
@@ -137,7 +140,7 @@ class AuditLogger {
     this.auditData.entries.push({
       type,
       timestamp:  this.now().toISOString(),
-      details:    AuditLogger.cloneDetails(this.filterDetails(details)),
+      details:    this.cloneDetails(this.filterDetails(details)),
       revertible,
       revertInstructions,
     });
@@ -145,6 +148,7 @@ class AuditLogger {
 
   // Rejects paths with traversal components (e.g. /tmp/../etc/passwd).
   // path.resolve normalises the path; if the result differs, it contained "..".
+  // Note: does not guard against symlinks — callers operate in trusted CI environments.
   private isSafePath(p: string): boolean {
     return path.isAbsolute(p) && path.resolve(p) === p;
   }
@@ -178,7 +182,7 @@ class AuditLogger {
       .replace(/[^\x20-\x7E]/g, '')
       .replace(/(?:\/[\w.\-]+){2,}/g, '[path]')         // Unix-style paths
       .replace(/[A-Z]:\\(?:[\w.\-]+\\?)+/gi, '[path]')  // Windows-style paths
-      .slice(0, MAX_ERR_MESSAGE_LENGTH);
+      .slice(0, MAX_ERR_MESSAGE_CHARS);
   }
 
   // Retains only allowlisted keys; warns with a count (not key names) when
@@ -200,35 +204,41 @@ class AuditLogger {
   }
 
   // Tries structuredClone (handles circulars), then JSON round-trip (handles
-  // non-cloneable primitives), then falls back to shallow copy as last resort.
-  private static cloneDetails(details: Record<string, unknown>): Record<string, unknown> {
+  // non-cloneable primitives like Symbols), then falls back to shallow copy.
+  // Risk ladder: JSON round-trip drops Date/undefined; shallow copy allows
+  // mutation of nested objects. The warn log flags either degraded path.
+  private cloneDetails(details: Record<string, unknown>): Record<string, unknown> {
     try {
       return structuredClone(details);
     } catch {
       try {
         return JSON.parse(JSON.stringify(details)) as Record<string, unknown>;
       } catch {
+        this.logger.warn('Audit: falling back to shallow clone — nested objects are mutable');
         return { ...details };
       }
     }
   }
 
-  // JSON.stringify replacer — delegates to redactString for all string values
-  // at any nesting level before the audit log is persisted to disk.
-  private secretReplacer(_key: string, value: unknown): unknown {
+  // Bound arrow property so it can be passed directly to JSON.stringify without
+  // an arrow wrapper in flush(), keeping this-binding unambiguous.
+  private readonly secretReplacer = (_key: string, value: unknown): unknown => {
     return typeof value === 'string' ? this.redactString(value) : value;
-  }
+  };
 
   // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
   // so other processes on shared CI runners cannot read it.
   // Retrieve later via: gh run download <runId> -n code-reviewer-audit
+  // Idempotent — subsequent calls return false without writing.
   async flush(): Promise<boolean> {
+    if (this.auditFlushed) return false;
+    this.auditFlushed = true;
     const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
       await this.fileSystem.writeFile(
         dest,
-        JSON.stringify(this.auditData, (k, v) => this.secretReplacer(k, v), 2),
+        JSON.stringify(this.auditData, this.secretReplacer, 2),
         { encoding: 'utf8', mode: 0o600 }
       );
       return true;
@@ -240,7 +250,10 @@ class AuditLogger {
 
   // Appends the markdown audit summary to stepSummaryPath (if set and safe).
   // The summary is visible in the Actions UI under the workflow run.
+  // Idempotent — subsequent calls return false without writing.
   async flushStepSummary(): Promise<boolean> {
+    if (this.summaryFlushed) return false;
+    this.summaryFlushed = true;
     const dest = this.stepSummaryPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
@@ -278,10 +291,11 @@ class AuditLogger {
       '|---|---|',
     ];
     for (const [k, v] of Object.entries(entry.details)) {
-      // Redact secrets from serialised values before they reach the step summary.
+      // Redact before truncating — truncating first could split a secret at the
+      // boundary, leaving a partial token that bypasses pattern matching.
       const raw = this.redactString(JSON.stringify(v));
-      const truncated = raw.length > MAX_DETAIL_VALUE_LENGTH
-        ? raw.slice(0, MAX_DETAIL_VALUE_LENGTH) + '…'
+      const truncated = raw.length > MAX_DETAIL_VALUE_CHARS
+        ? raw.slice(0, MAX_DETAIL_VALUE_CHARS) + '…'
         : raw;
       lines.push(`| ${s(k)} | \`${s(truncated)}\` |`);
     }
@@ -316,4 +330,5 @@ class AuditLogger {
   }
 }
 
-export { AuditLogger, AuditLoggerOptions, AuditEntry, AuditLog, ActionType };
+export { AuditLogger };
+export type { AuditLoggerOptions, AuditEntry, AuditLog, ActionType };

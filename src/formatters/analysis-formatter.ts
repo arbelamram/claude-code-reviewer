@@ -130,7 +130,7 @@ interface CodeIssue {
         const medium = analysis.issues.filter(i => i.severity === 'medium');
         const low = analysis.issues.filter(i => i.severity === 'low');
   
-        const formatIssue = (issue: CodeIssue, idx: number, label: string): string => {
+        const formatIssue = (issue: CodeIssue, idx: number, label: 'Fix' | 'Suggestion'): string => {
           let block = `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
           if (issue.location) block += `   📍 \`${issue.location}\`\n`;
           block += `   💡 ${label}: ${issue.suggestion}\n`;

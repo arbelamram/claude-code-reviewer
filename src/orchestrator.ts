@@ -131,9 +131,9 @@ class CodeReviewOrchestrator {
     this.log.info(`📍 Repository: ${options.owner}/${options.repo}\n`);
 
     const audit = new AuditLogger(`${options.owner}/${options.repo}`, options.prNumber, {
-      auditLogPath:    process.env.AUDIT_LOG_PATH,
+      auditLogPath: process.env.AUDIT_LOG_PATH,
       stepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
-      runId:           process.env.GITHUB_RUN_ID,
+      runId: process.env.GITHUB_RUN_ID,
     });
     try {
       const { prContext, diffs } = await this.fetchPRData(options);

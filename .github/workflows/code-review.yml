@@ -79,3 +79,4 @@ jobs:
           name: code-reviewer-audit
           path: /tmp/code-reviewer-audit.json
           if-no-files-found: ignore
+          retention-days: 7
