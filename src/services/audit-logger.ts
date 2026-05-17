@@ -312,6 +312,10 @@ class AuditLogger {
       '|---|---|',
     ];
     for (const [k, v] of Object.entries(entry.details)) {
+      // Defense-in-depth: skip keys not in the allowlist even though entry.details
+      // was already filtered at record() time, so a future refactor cannot bypass
+      // this path without also updating the allowlist.
+      if (!AuditLogger.SAFE_DETAIL_KEYS.has(k)) continue;
       // Redact before truncating — truncating first could split a secret at the
       // boundary, leaving a partial token that bypasses pattern matching.
       const raw = this.redactString(JSON.stringify(v));
