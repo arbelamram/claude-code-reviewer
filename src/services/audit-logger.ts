@@ -92,7 +92,7 @@ class AuditLogger {
     this.entries.push({
       type,
       timestamp: new Date().toISOString(),
-      details: JSON.parse(JSON.stringify(details)) as Record<string, unknown>,
+      details:   AuditLogger.cloneDetails(details),
       revertible,
       revertInstructions,
     });
@@ -120,14 +120,29 @@ class AuditLogger {
     return msg.replace(/[^\x20-\x7E]/g, '').slice(0, MAX_ERR_MESSAGE_LENGTH);
   }
 
-  // Writes the audit JSON to auditLogPath (if set and safe).
+  // structuredClone handles circular references; falls back to shallow copy if
+  // the value contains non-cloneable types (functions, symbols, etc.).
+  private static cloneDetails(details: Record<string, unknown>): Record<string, unknown> {
+    try {
+      return structuredClone(details);
+    } catch {
+      return { ...details };
+    }
+  }
+
+  // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
+  // so other processes on shared CI runners cannot read it.
   // The workflow uploads this file as a GitHub Actions artifact so Claude
   // can retrieve it later via: gh run download <runId> -n code-reviewer-audit
   async flush(): Promise<boolean> {
     const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
-      await this.fileSystem.writeFile(dest, JSON.stringify(this.auditData, null, 2), 'utf8');
+      await this.fileSystem.writeFile(
+        dest,
+        JSON.stringify(this.auditData, null, 2),
+        { encoding: 'utf8', mode: 0o600 }
+      );
       return true;
     } catch (err) {
       this.logger.warn(`Audit log flush failed: ${this.safeErr(err)}`);
@@ -149,46 +164,61 @@ class AuditLogger {
     }
   }
 
-  toMarkdown(): string {
-    const { skillName, runId, startedAt, repository, prNumber, entries } = this.auditData;
+  private markdownHeader(): string[] {
+    const { skillName, runId, startedAt, repository, prNumber } = this.auditData;
     const s = (v: string): string => this.sanitizeMd(v);
-
-    const lines = [
+    return [
       `## 🗒️ ${skillName} — Audit Log`,
       '',
-      `| Field | Value |`,
-      `|---|---|`,
+      '| Field | Value |',
+      '|---|---|',
       `| Repository | \`${s(repository)}\` |`,
       `| PR | #${prNumber} |`,
       `| Run ID | \`${s(runId)}\` |`,
       `| Started | ${s(startedAt)} |`,
       '',
     ];
+  }
+
+  private markdownEntryLines(entry: AuditEntry): string[] {
+    const s = (v: string): string => this.sanitizeMd(v);
+    const icon = entry.revertible ? '↩️' : '📌';
+    const lines = [
+      `#### ${icon} \`${entry.type}\` — ${s(entry.timestamp)}`,
+      '',
+      '| Key | Value |',
+      '|---|---|',
+    ];
+    for (const [k, v] of Object.entries(entry.details)) {
+      const raw = JSON.stringify(v);
+      const truncated = raw.length > MAX_DETAIL_VALUE_LENGTH
+        ? raw.slice(0, MAX_DETAIL_VALUE_LENGTH) + '…'
+        : raw;
+      lines.push(`| ${s(k)} | \`${s(truncated)}\` |`);
+    }
+    if (entry.revertInstructions) {
+      lines.push('', `**To revert:** ${s(entry.revertInstructions)}`);
+    }
+    lines.push('');
+    return lines;
+  }
+
+  toMarkdown(): string {
+    const { entries } = this.auditData;
+    const lines = this.markdownHeader();
 
     if (entries.length === 0) {
-      lines.push('_No tracked actions recorded during this run._');
-      lines.push('');
-      lines.push('> This skill run posted review comments and set a commit status.');
-      lines.push('> To revert: delete the posted comments via the GitHub UI and');
-      lines.push('> reset the commit status via the GitHub API if needed.');
+      lines.push(
+        '_No tracked actions recorded during this run._',
+        '',
+        '> This skill run posted review comments and set a commit status.',
+        '> To revert: delete the posted comments via the GitHub UI and',
+        '> reset the commit status via the GitHub API if needed.',
+      );
     } else {
       lines.push('### Actions taken', '');
       for (const entry of entries) {
-        const icon = entry.revertible ? '↩️' : '📌';
-        lines.push(`#### ${icon} \`${entry.type}\` — ${s(entry.timestamp)}`, '');
-        lines.push('| Key | Value |');
-        lines.push('|---|---|');
-        for (const [k, v] of Object.entries(entry.details)) {
-          const raw = JSON.stringify(v);
-          const truncated = raw.length > MAX_DETAIL_VALUE_LENGTH
-            ? raw.slice(0, MAX_DETAIL_VALUE_LENGTH) + '…'
-            : raw;
-          lines.push(`| ${s(k)} | \`${s(truncated)}\` |`);
-        }
-        if (entry.revertInstructions) {
-          lines.push('', `**To revert:** ${s(entry.revertInstructions)}`);
-        }
-        lines.push('');
+        lines.push(...this.markdownEntryLines(entry));
       }
     }
 

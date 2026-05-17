@@ -162,7 +162,16 @@ class CodeReviewOrchestrator {
       this.log.error(`❌ Code review failed for PR #${options.prNumber}: ${msg}`);
       throw new Error(`Code review failed for PR #${options.prNumber}: ${msg}`);
     } finally {
-      await Promise.allSettled([audit.flush(), audit.flushStepSummary()]);
+      const [flushResult, summaryResult] = await Promise.allSettled([
+        audit.flush(),
+        audit.flushStepSummary(),
+      ]);
+      if (flushResult.status === 'rejected') {
+        this.log.warn(`Audit flush error: ${this.safeErrorMessage(flushResult.reason)}`);
+      }
+      if (summaryResult.status === 'rejected') {
+        this.log.warn(`Step summary flush error: ${this.safeErrorMessage(summaryResult.reason)}`);
+      }
     }
   }
 
