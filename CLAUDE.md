@@ -92,6 +92,12 @@ To customize for your project, edit `config/standards.yaml` and set `enabled: tr
 
 See `.env.example` for the template. In GitHub Actions, these are configured as repository secrets.
 
+## Standards-Aware Development
+
+When planning or implementing any code change in this repository, read `config/standards.yaml` first and design the solution to satisfy all enabled rules across every category (security, performance, best-practices, style). The rules are the source of truth for what correct code looks like here — internalise them at the design stage, not after the fact.
+
+The skill's GitHub CI review acts as a double-check. If it finds a violation, it means the design phase missed something — not that the fix should happen in a follow-up push.
+
 ## Common Development Tasks
 
 ### Adding a New Coding Rule
