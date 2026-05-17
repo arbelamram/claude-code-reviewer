@@ -142,8 +142,8 @@ class CodeReviewOrchestrator {
       this.log.error(`❌ Code review failed for PR #${options.prNumber}: ${msg}`);
       throw new Error(`Code review failed for PR #${options.prNumber}: ${msg}`);
     } finally {
-      audit.flush();
-      audit.flushStepSummary();
+      await audit.flush();
+      await audit.flushStepSummary();
     }
   }
 

@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 
 // Action types a skill can perform. Git-level entries (file_*, branch_*,
 // commit_pushed, pr_*) are the primary revert targets. commit_status_set
@@ -62,14 +63,20 @@ class AuditLogger {
     });
   }
 
+  // Rejects paths with traversal components (e.g. /tmp/../etc/passwd).
+  // path.resolve normalises the path; if the result differs, it contained "..".
+  private isSafePath(p: string): boolean {
+    return path.isAbsolute(p) && path.resolve(p) === p;
+  }
+
   // Writes the audit JSON to the path in AUDIT_LOG_PATH (if set).
   // The workflow uploads this file as a GitHub Actions artifact so Claude
   // can retrieve it later via: gh run download <runId> -n code-reviewer-audit
-  flush(): void {
+  async flush(): Promise<void> {
     const dest = process.env.AUDIT_LOG_PATH;
-    if (!dest) return;
+    if (!dest || !this.isSafePath(dest)) return;
     try {
-      fs.writeFileSync(dest, JSON.stringify(this.log, null, 2), 'utf8');
+      await fs.promises.writeFile(dest, JSON.stringify(this.log, null, 2), 'utf8');
     } catch {
       // Non-fatal — audit write failure should never abort a review.
     }
@@ -77,11 +84,11 @@ class AuditLogger {
 
   // Appends the markdown audit summary to $GITHUB_STEP_SUMMARY (if set).
   // The summary is visible in the Actions UI under the workflow run.
-  flushStepSummary(): void {
+  async flushStepSummary(): Promise<void> {
     const dest = process.env.GITHUB_STEP_SUMMARY;
-    if (!dest) return;
+    if (!dest || !this.isSafePath(dest)) return;
     try {
-      fs.appendFileSync(dest, '\n\n' + this.toMarkdown(), 'utf8');
+      await fs.promises.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
     } catch {
       // Non-fatal — step summary failure should never abort a review.
     }
