@@ -83,12 +83,14 @@ class AuditLogger {
   private summaryPromise: Promise<boolean> | undefined;
 
   // Built-in patterns cover the most common CI secret formats.
+  // No g flag here — these are stateless templates. The constructor clones each
+  // into a per-instance RegExp with g added, so static lastIndex is never mutated.
   private static readonly SECRET_PATTERNS: RegExp[] = [
-    /ghp_[a-zA-Z0-9]{36}/g,           // GitHub classic PAT
-    /ghs_[a-zA-Z0-9]{36}/g,           // GitHub Actions token
-    /github_pat_[a-zA-Z0-9_]{82}/g,   // GitHub fine-grained PAT
-    /\bsk-[a-zA-Z0-9]{32,}\b/g,       // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
-    /Bearer\s+\S{20,}/gi,             // generic Bearer token
+    /ghp_[a-zA-Z0-9]{36}/,           // GitHub classic PAT
+    /ghs_[a-zA-Z0-9]{36}/,           // GitHub Actions token
+    /github_pat_[a-zA-Z0-9_]{82}/,   // GitHub fine-grained PAT
+    /\bsk-[a-zA-Z0-9]{32,}\b/,       // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
+    /Bearer\s+\S{20,}/i,             // generic Bearer token
   ];
 
   // Allowlist of detail keys permitted in audit entries. Fields outside this
@@ -128,9 +130,14 @@ class AuditLogger {
     this.fileSystem      = fileSystem;
     this.now             = now;
     this.allowedPrefixes = allowedPathPrefixes;
+    // Clone every pattern into a fresh per-instance RegExp with g ensured so:
+    // (a) static lastIndex state is never mutated across instances, and
+    // (b) replace() replaces all occurrences, not just the first.
+    const withGlobal = (p: RegExp): RegExp =>
+      new RegExp(p.source, p.flags.includes('g') ? p.flags : p.flags + 'g');
     this.allSecretPatterns = [
-      ...AuditLogger.SECRET_PATTERNS,
-      ...secretPatterns.map(p => new RegExp(p.source, p.flags)),
+      ...AuditLogger.SECRET_PATTERNS.map(withGlobal),
+      ...secretPatterns.map(withGlobal),
     ];
     this.auditData = {
       skillName: 'claude-code-reviewer',
@@ -178,8 +185,10 @@ class AuditLogger {
       .replace(/>/g, '&gt;');
   }
 
-  // Applies all secret patterns to a single string. Resets lastIndex before
-  // each replace so g-flag regex state never leaks between invocations.
+  // Applies all secret patterns to a single string. allSecretPatterns holds
+  // per-instance clones (g flag guaranteed), so lastIndex state is isolated.
+  // The explicit reset is a defensive guard against future use of exec()/test()
+  // on these references, which would be sensitive to leftover lastIndex.
   private redactString(value: string): string {
     let result = value;
     for (const pattern of this.allSecretPatterns) {
