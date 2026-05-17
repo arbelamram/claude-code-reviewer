@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Logger } from './logger.js';
 
 // Action types a skill can perform. Git-level entries (file_*, branch_*,
 // commit_pushed, pr_*) are the primary revert targets. commit_status_set
@@ -40,22 +41,26 @@ class AuditLogger {
   private readonly log: AuditLog;
   private readonly auditLogPath: string | undefined;
   private readonly stepSummaryPath: string | undefined;
+  private readonly logger: Logger;
 
   constructor(
     repository: string,
     prNumber: number,
-    auditLogPath: string | undefined  = process.env.AUDIT_LOG_PATH,
-    stepSummaryPath: string | undefined = process.env.GITHUB_STEP_SUMMARY
+    auditLogPath: string | undefined    = process.env.AUDIT_LOG_PATH,
+    stepSummaryPath: string | undefined = process.env.GITHUB_STEP_SUMMARY,
+    runId: string                       = process.env.GITHUB_RUN_ID ?? 'local',
+    logger: Logger                      = new Logger()
   ) {
     this.auditLogPath    = auditLogPath;
     this.stepSummaryPath = stepSummaryPath;
+    this.logger          = logger;
     this.log = {
-      skillName:  'claude-code-reviewer',
-      runId:      process.env.GITHUB_RUN_ID ?? 'local',
-      startedAt:  new Date().toISOString(),
+      skillName: 'claude-code-reviewer',
+      runId,
+      startedAt: new Date().toISOString(),
       repository,
       prNumber,
-      entries:    this.entries,
+      entries:   this.entries,
     };
   }
 
@@ -89,28 +94,38 @@ class AuditLogger {
       .replace(/>/g, '&gt;');
   }
 
-  // Writes the audit JSON to the path in AUDIT_LOG_PATH (if set).
+  // Strips non-printable chars and caps length so error messages are safe to log.
+  private safeErr(err: unknown): string {
+    const msg = err instanceof Error ? err.message : String(err);
+    return msg.replace(/[^\x20-\x7E]/g, '').slice(0, 200);
+  }
+
+  // Writes the audit JSON to auditLogPath (if set and safe).
   // The workflow uploads this file as a GitHub Actions artifact so Claude
   // can retrieve it later via: gh run download <runId> -n code-reviewer-audit
-  async flush(): Promise<void> {
+  async flush(): Promise<boolean> {
     const dest = this.auditLogPath;
-    if (!dest || !this.isSafePath(dest)) return;
+    if (!dest || !this.isSafePath(dest)) return false;
     try {
       await fs.promises.writeFile(dest, JSON.stringify(this.log, null, 2), 'utf8');
+      return true;
     } catch (err) {
-      console.warn('Audit log flush failed:', err);
+      this.logger.warn(`Audit log flush failed: ${this.safeErr(err)}`);
+      return false;
     }
   }
 
-  // Appends the markdown audit summary to $GITHUB_STEP_SUMMARY (if set).
+  // Appends the markdown audit summary to stepSummaryPath (if set and safe).
   // The summary is visible in the Actions UI under the workflow run.
-  async flushStepSummary(): Promise<void> {
+  async flushStepSummary(): Promise<boolean> {
     const dest = this.stepSummaryPath;
-    if (!dest || !this.isSafePath(dest)) return;
+    if (!dest || !this.isSafePath(dest)) return false;
     try {
       await fs.promises.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
+      return true;
     } catch (err) {
-      console.warn('Step summary flush failed:', err);
+      this.logger.warn(`Step summary flush failed: ${this.safeErr(err)}`);
+      return false;
     }
   }
 
