@@ -43,6 +43,7 @@ interface AuditLoggerOptions {
   runId?:           string;
   logger?:          Logger;
   fileSystem?:      FileSystem;
+  now?:             () => Date; // injectable clock for deterministic tests
 }
 
 const MAX_DETAIL_VALUE_LENGTH = 500;
@@ -55,6 +56,15 @@ class AuditLogger {
   private readonly stepSummaryPath: string | undefined;
   private readonly logger: Logger;
   private readonly fileSystem: FileSystem;
+  private readonly now: () => Date;
+
+  // Patterns scrubbed from flushed JSON to prevent accidental secret persistence.
+  private static readonly SECRET_PATTERNS: RegExp[] = [
+    /ghp_[a-zA-Z0-9]{36}/g,   // GitHub personal access token
+    /ghs_[a-zA-Z0-9]{36}/g,   // GitHub Actions token
+    /sk-[a-zA-Z0-9]{32,}/g,   // Anthropic / OpenAI-style API key
+    /Bearer\s+\S{20,}/gi,      // generic Bearer token in Authorization header
+  ];
 
   constructor(
     repository: string,
@@ -67,16 +77,18 @@ class AuditLogger {
       runId      = 'local',
       logger     = new Logger(),
       fileSystem = fs.promises,
+      now        = () => new Date(),
     } = options;
 
     this.auditLogPath    = auditLogPath;
     this.stepSummaryPath = stepSummaryPath;
     this.logger          = logger;
     this.fileSystem      = fileSystem;
+    this.now             = now;
     this.auditData = {
       skillName: 'claude-code-reviewer',
       runId,
-      startedAt: new Date().toISOString(),
+      startedAt: this.now().toISOString(),
       repository,
       prNumber,
       entries:   this.entries,
@@ -91,7 +103,7 @@ class AuditLogger {
   ): void {
     this.entries.push({
       type,
-      timestamp: new Date().toISOString(),
+      timestamp: this.now().toISOString(),
       details:   AuditLogger.cloneDetails(details),
       revertible,
       revertInstructions,
@@ -130,6 +142,17 @@ class AuditLogger {
     }
   }
 
+  // JSON.stringify replacer that redacts known secret patterns from string values
+  // at any nesting level before the audit log is persisted to disk.
+  private static secretReplacer(_key: string, value: unknown): unknown {
+    if (typeof value !== 'string') return value;
+    let result = value;
+    for (const pattern of AuditLogger.SECRET_PATTERNS) {
+      result = result.replace(pattern, '[REDACTED]');
+    }
+    return result;
+  }
+
   // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
   // so other processes on shared CI runners cannot read it.
   // The workflow uploads this file as a GitHub Actions artifact so Claude
@@ -140,7 +163,7 @@ class AuditLogger {
     try {
       await this.fileSystem.writeFile(
         dest,
-        JSON.stringify(this.auditData, null, 2),
+        JSON.stringify(this.auditData, AuditLogger.secretReplacer, 2),
         { encoding: 'utf8', mode: 0o600 }
       );
       return true;
