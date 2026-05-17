@@ -53,8 +53,9 @@ interface AuditLoggerOptions {
   allowedPathPrefixes?: string[];
 }
 
-// _CHARS suffix makes the unit explicit at the declaration site.
+// 500 chars keeps individual markdown table cells readable without bloating the step summary.
 const MAX_DETAIL_VALUE_CHARS = 500;
+// 200 chars captures enough of an error message to be actionable without leaking stack traces.
 const MAX_ERR_MESSAGE_CHARS  = 200;
 
 /**
@@ -63,6 +64,8 @@ const MAX_ERR_MESSAGE_CHARS  = 200;
  *
  * Lifecycle: construct → record() (zero or more times) → flush() / flushStepSummary()
  * Not thread-safe — intended for single-threaded, single-run use within Node.js.
+ * Instances are single-use per run: flushPromise and summaryPromise are never
+ * reset, so creating a new instance per review run is required.
  * flush() and flushStepSummary() are each idempotent via promise memoization:
  * concurrent async callers receive the same Promise and the underlying write
  * executes exactly once.
@@ -203,6 +206,10 @@ class AuditLogger {
   // Uses realpathSync on the parent directory (which must exist for a write) to
   // detect symlinks pointing outside the expected location. Logs a warning on
   // every rejection so callers can see why a flush path was silently skipped.
+  // Residual TOCTOU risk: the symlink target could change between this check and
+  // the actual write. Fully eliminating this requires O_NOFOLLOW at the OS level.
+  // The prefix restriction plus AUDIT_FILE_MODE (0o600) provides adequate
+  // mitigation for trusted CI environments.
   private isSafePath(p: string): boolean {
     if (!path.isAbsolute(p) || path.resolve(p) !== p) {
       this.logger.warn('Audit: path rejected — not absolute or contains traversal components');
@@ -297,6 +304,7 @@ class AuditLogger {
   // After truncation, a '[REDACTED]' replacement could be split at the cut point
   // (e.g. '[REDACT'). Check longest-to-shortest prefixes of the marker and remove
   // any partial suffix so the truncated value is clean.
+  // Complexity: O(m²) where m = marker.length (10). Bounded constant in practice.
   private trimPartialRedacted(s: string): string {
     const marker = AuditLogger.REDACTED_MARKER;
     for (let len = marker.length - 1; len >= 1; len--) {
@@ -347,7 +355,7 @@ class AuditLogger {
     const dest = this.stepSummaryPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
-      await this.fileSystem.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
+      await this.fileSystem.appendFile(dest, '\n\n' + this.toMarkdown(), { encoding: 'utf8', mode: AuditLogger.AUDIT_FILE_MODE });
       return true;
     } catch (err) {
       this.logger.error(`Step summary flush failed: ${this.safeErr(err)}`);
@@ -401,7 +409,9 @@ class AuditLogger {
       lines.push(`| ${s(k)} | \`${s(truncated)}\` |`);
     }
     if (entry.revertInstructions) {
-      lines.push('', `**To revert:** ${s(entry.revertInstructions)}`);
+      // Redact before sanitizing — revertInstructions may embed API endpoints
+      // or values that future callers could inadvertently extend with tokens.
+      lines.push('', `**To revert:** ${s(this.redactString(entry.revertInstructions))}`);
     }
     lines.push('');
     return lines;

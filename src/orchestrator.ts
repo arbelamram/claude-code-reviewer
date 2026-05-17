@@ -253,25 +253,25 @@ class CodeReviewOrchestrator {
   // ── Post results phase ─────────────────────────────────────────────────────
 
   private async postResults(options: ReviewOptions, analysis: AnalysisResult): Promise<number> {
-    const prComment      = AnalysisFormatter.formatForPRComment(analysis);
+    const prComment = AnalysisFormatter.formatForPRComment(analysis);
     const reviewComments = AnalysisFormatter.convertToReviewComments(analysis);
 
     this.log.info('📤 Posting review to GitHub...');
     if (reviewComments.length > 0) {
       await this.githubService.postPRReview({
-        owner:    options.owner,
-        repo:     options.repo,
+        owner: options.owner,
+        repo: options.repo,
         prNumber: options.prNumber,
         comments: reviewComments,
-        summary:  '📋 Inline code review comments posted below',
+        summary: '📋 Inline code review comments posted below',
       });
     }
 
     await this.githubService.postPRComment({
-      owner:    options.owner,
-      repo:     options.repo,
+      owner: options.owner,
+      repo: options.repo,
       prNumber: options.prNumber,
-      comment:  prComment,
+      comment: prComment,
     });
     this.log.info(`✅ Summary comment posted (${reviewComments.length} inline comment(s))\n`);
 
