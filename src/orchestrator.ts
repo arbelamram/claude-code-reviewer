@@ -180,19 +180,45 @@ ${diff.patch || '(No patch content)'}
         comment: prComment,
       });
 
-      // Step 10: Create GitHub issues for high/medium severity problems and update commit status
-      console.log('📋 Creating GitHub issues for problems found...');
-      const issueCount = await this.createIssuesForProblems(
-        options.owner,
-        options.repo,
-        options.prNumber,
-        prContext.headSha,
-        analysis
-      );
+      // Step 10: Optionally create GitHub issues and update commit status.
+      // Issue creation is disabled by default. Set ENABLE_ISSUE_CREATION=true to re-enable.
+      let issueCount = 0;
+      if (process.env.ENABLE_ISSUE_CREATION === 'true') {
+        issueCount = await this.createIssuesForProblems(
+          options.owner,
+          options.repo,
+          options.prNumber,
+          prContext.headSha,
+          analysis
+        );
+      } else {
+        // Without issue creation the commit status must still reflect the review outcome.
+        // Re-pushing fixes triggers synchronize → re-runs this workflow → status updates automatically.
+        const blocking = analysis.issues.filter(
+          i => i.severity === 'high' || i.severity === 'medium'
+        );
+        if (blocking.length > 0) {
+          await this.githubService.setCommitStatus(
+            options.owner, options.repo, prContext.headSha,
+            'failure',
+            `${blocking.length} issue(s) found — push fixes to re-run review`
+          );
+        } else {
+          await this.githubService.setCommitStatus(
+            options.owner, options.repo, prContext.headSha,
+            'success',
+            'No blocking code review issues found'
+          );
+        }
+      }
 
       console.log(`\n✨ Code review complete for PR #${options.prNumber}!`);
       console.log(`   📌 Posted ${reviewComments.length} inline comment(s) on specific lines`);
-      console.log(`   🐛 Created ${issueCount} GitHub issue(s) for problems to fix`);
+      if (process.env.ENABLE_ISSUE_CREATION === 'true') {
+        console.log(`   🐛 Created ${issueCount} GitHub issue(s) for problems to fix`);
+      } else {
+        console.log(`   ℹ️  Issue creation disabled — commit status reflects review outcome`);
+      }
     } catch (error) {
       console.error('❌ Error during code review:', error);
       throw error;
