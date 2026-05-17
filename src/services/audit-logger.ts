@@ -34,27 +34,46 @@ interface AuditLog {
   entries: AuditEntry[];
 }
 
+// Subset of fs.promises needed by AuditLogger — injectable for testing.
+type FileSystem = Pick<typeof fs.promises, 'writeFile' | 'appendFile'>;
+
+interface AuditLoggerOptions {
+  auditLogPath?:    string;
+  stepSummaryPath?: string;
+  runId?:           string;
+  logger?:          Logger;
+  fileSystem?:      FileSystem;
+}
+
 const MAX_DETAIL_VALUE_LENGTH = 500;
+const MAX_ERR_MESSAGE_LENGTH  = 200;
 
 class AuditLogger {
   private readonly entries: AuditEntry[] = [];
-  private readonly log: AuditLog;
+  private readonly auditData: AuditLog;
   private readonly auditLogPath: string | undefined;
   private readonly stepSummaryPath: string | undefined;
   private readonly logger: Logger;
+  private readonly fileSystem: FileSystem;
 
   constructor(
     repository: string,
     prNumber: number,
-    auditLogPath: string | undefined    = process.env.AUDIT_LOG_PATH,
-    stepSummaryPath: string | undefined = process.env.GITHUB_STEP_SUMMARY,
-    runId: string                       = process.env.GITHUB_RUN_ID ?? 'local',
-    logger: Logger                      = new Logger()
+    options: AuditLoggerOptions = {}
   ) {
+    const {
+      auditLogPath    = process.env.AUDIT_LOG_PATH,
+      stepSummaryPath = process.env.GITHUB_STEP_SUMMARY,
+      runId           = process.env.GITHUB_RUN_ID ?? 'local',
+      logger          = new Logger(),
+      fileSystem      = fs.promises,
+    } = options;
+
     this.auditLogPath    = auditLogPath;
     this.stepSummaryPath = stepSummaryPath;
     this.logger          = logger;
-    this.log = {
+    this.fileSystem      = fileSystem;
+    this.auditData = {
       skillName: 'claude-code-reviewer',
       runId,
       startedAt: new Date().toISOString(),
@@ -89,6 +108,7 @@ class AuditLogger {
   private sanitizeMd(value: string): string {
     return value
       .replace(/[\r\n]/g, ' ')
+      .replace(/`/g, '&#96;')
       .replace(/\|/g, '\\|')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
@@ -97,7 +117,7 @@ class AuditLogger {
   // Strips non-printable chars and caps length so error messages are safe to log.
   private safeErr(err: unknown): string {
     const msg = err instanceof Error ? err.message : String(err);
-    return msg.replace(/[^\x20-\x7E]/g, '').slice(0, 200);
+    return msg.replace(/[^\x20-\x7E]/g, '').slice(0, MAX_ERR_MESSAGE_LENGTH);
   }
 
   // Writes the audit JSON to auditLogPath (if set and safe).
@@ -107,7 +127,7 @@ class AuditLogger {
     const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
-      await fs.promises.writeFile(dest, JSON.stringify(this.log, null, 2), 'utf8');
+      await this.fileSystem.writeFile(dest, JSON.stringify(this.auditData, null, 2), 'utf8');
       return true;
     } catch (err) {
       this.logger.warn(`Audit log flush failed: ${this.safeErr(err)}`);
@@ -121,7 +141,7 @@ class AuditLogger {
     const dest = this.stepSummaryPath;
     if (!dest || !this.isSafePath(dest)) return false;
     try {
-      await fs.promises.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
+      await this.fileSystem.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
       return true;
     } catch (err) {
       this.logger.warn(`Step summary flush failed: ${this.safeErr(err)}`);
@@ -130,8 +150,8 @@ class AuditLogger {
   }
 
   toMarkdown(): string {
-    const { skillName, runId, startedAt, repository, prNumber, entries } = this.log;
-    const s = this.sanitizeMd.bind(this);
+    const { skillName, runId, startedAt, repository, prNumber, entries } = this.auditData;
+    const s = (v: string): string => this.sanitizeMd(v);
 
     const lines = [
       `## 🗒️ ${skillName} — Audit Log`,
@@ -176,4 +196,4 @@ class AuditLogger {
   }
 }
 
-export { AuditLogger, AuditEntry, AuditLog, ActionType };
+export { AuditLogger, AuditLoggerOptions, AuditEntry, AuditLog, ActionType };
