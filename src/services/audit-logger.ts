@@ -62,11 +62,11 @@ class AuditLogger {
     options: AuditLoggerOptions = {}
   ) {
     const {
-      auditLogPath    = process.env.AUDIT_LOG_PATH,
-      stepSummaryPath = process.env.GITHUB_STEP_SUMMARY,
-      runId           = process.env.GITHUB_RUN_ID ?? 'local',
-      logger          = new Logger(),
-      fileSystem      = fs.promises,
+      auditLogPath,
+      stepSummaryPath,
+      runId      = 'local',
+      logger     = new Logger(),
+      fileSystem = fs.promises,
     } = options;
 
     this.auditLogPath    = auditLogPath;
@@ -92,7 +92,7 @@ class AuditLogger {
     this.entries.push({
       type,
       timestamp: new Date().toISOString(),
-      details,
+      details: JSON.parse(JSON.stringify(details)) as Record<string, unknown>,
       revertible,
       revertInstructions,
     });

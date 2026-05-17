@@ -41,6 +41,15 @@ interface OrchestratorServices {
   claudeService?: ClaudeService;
 }
 
+interface IssueCreationContext {
+  owner:    string;
+  repo:     string;
+  prNumber: number;
+  headSha:  string;
+  analysis: AnalysisResult;
+  audit:    AuditLogger;
+}
+
 function loadConfig(): OrchestratorConfig {
   const parseEnvInt = (name: string, fallback: number): number => {
     const raw = process.env[name];
@@ -121,17 +130,28 @@ class CodeReviewOrchestrator {
     this.log.info(`\n🚀 Starting Code Review for PR #${options.prNumber}`);
     this.log.info(`📍 Repository: ${options.owner}/${options.repo}\n`);
 
-    const audit = new AuditLogger(`${options.owner}/${options.repo}`, options.prNumber);
+    const audit = new AuditLogger(`${options.owner}/${options.repo}`, options.prNumber, {
+      auditLogPath:    process.env.AUDIT_LOG_PATH,
+      stepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
+      runId:           process.env.GITHUB_RUN_ID,
+    });
     try {
       const { prContext, diffs } = await this.fetchPRData(options);
       const analysis             = await this.analyseCode(diffs);
       const inlineCount          = await this.postResults(options, analysis);
 
+      const ctx: IssueCreationContext = {
+        owner:    options.owner,
+        repo:     options.repo,
+        prNumber: options.prNumber,
+        headSha:  prContext.headSha,
+        analysis,
+        audit,
+      };
+
       let issueCount = 0;
       if (this.config.issueCreationEnabled) {
-        issueCount = await this.createIssuesForProblems(
-          options.owner, options.repo, options.prNumber, prContext.headSha, analysis, audit
-        );
+        issueCount = await this.createIssuesForProblems(ctx);
       } else {
         await this.setStatusFromAnalysis(options.owner, options.repo, prContext.headSha, analysis, audit);
       }
@@ -142,8 +162,7 @@ class CodeReviewOrchestrator {
       this.log.error(`❌ Code review failed for PR #${options.prNumber}: ${msg}`);
       throw new Error(`Code review failed for PR #${options.prNumber}: ${msg}`);
     } finally {
-      await audit.flush();
-      await audit.flushStepSummary();
+      await Promise.allSettled([audit.flush(), audit.flushStepSummary()]);
     }
   }
 
@@ -261,14 +280,9 @@ class CodeReviewOrchestrator {
 
   // ── Issue creation ─────────────────────────────────────────────────────────
 
-  private async createIssuesForProblems(
-    owner: string,
-    repo: string,
-    prNumber: number,
-    headSha: string,
-    analysis: AnalysisResult,
-    audit: AuditLogger
-  ): Promise<number> {
+  private async createIssuesForProblems(ctx: IssueCreationContext): Promise<number> {
+    const { owner, repo, prNumber, headSha, analysis, audit } = ctx;
+
     const actionable = analysis.issues.filter(
       i => i.severity === 'high' || i.severity === 'medium'
     );
