@@ -130,32 +130,27 @@ interface CodeIssue {
         const medium = analysis.issues.filter(i => i.severity === 'medium');
         const low = analysis.issues.filter(i => i.severity === 'low');
   
+        const formatIssue = (issue: CodeIssue, idx: number, label: string): string => {
+          let block = `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
+          if (issue.location) block += `   📍 \`${issue.location}\`\n`;
+          block += `   💡 ${label}: ${issue.suggestion}\n`;
+          if (issue.example) block += `   📝 Example: \`${issue.example}\`\n`;
+          return block + '\n';
+        };
+
         if (high.length > 0) {
           comment += '#### 🔴 High Severity\n';
-          high.forEach((issue, idx) => {
-            comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
-            if (issue.location) comment += `   📍 Location: ${issue.location}\n`;
-            comment += `   💡 Fix: ${issue.suggestion}\n`;
-            if (issue.example) comment += `   📝 Example: \`${issue.example}\`\n`;
-            comment += '\n';
-          });
+          high.forEach((issue, idx) => { comment += formatIssue(issue, idx, 'Fix'); });
         }
-  
+
         if (medium.length > 0) {
           comment += '#### 🟡 Medium Severity\n';
-          medium.forEach((issue, idx) => {
-            comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
-            comment += `   💡 Suggestion: ${issue.suggestion}\n`;
-            comment += '\n';
-          });
+          medium.forEach((issue, idx) => { comment += formatIssue(issue, idx, 'Suggestion'); });
         }
-  
+
         if (low.length > 0) {
           comment += '#### 🟢 Low Severity\n';
-          low.forEach((issue, idx) => {
-            comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
-          });
-          comment += '\n';
+          low.forEach((issue, idx) => { comment += formatIssue(issue, idx, 'Suggestion'); });
         }
       } else {
         comment += '✅ **No issues found!**\n\n';
