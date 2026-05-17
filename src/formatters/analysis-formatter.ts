@@ -140,17 +140,23 @@ interface CodeIssue {
 
         if (high.length > 0) {
           comment += '#### 🔴 High Severity\n';
-          high.forEach((issue, idx) => { comment += formatIssue(issue, idx, 'Fix'); });
+          high.forEach((issue, idx) => {
+            comment += formatIssue(issue, idx, 'Fix');
+          });
         }
 
         if (medium.length > 0) {
           comment += '#### 🟡 Medium Severity\n';
-          medium.forEach((issue, idx) => { comment += formatIssue(issue, idx, 'Suggestion'); });
+          medium.forEach((issue, idx) => {
+            comment += formatIssue(issue, idx, 'Suggestion');
+          });
         }
 
         if (low.length > 0) {
           comment += '#### 🟢 Low Severity\n';
-          low.forEach((issue, idx) => { comment += formatIssue(issue, idx, 'Suggestion'); });
+          low.forEach((issue, idx) => {
+            comment += formatIssue(issue, idx, 'Suggestion');
+          });
         }
       } else {
         comment += '✅ **No issues found!**\n\n';

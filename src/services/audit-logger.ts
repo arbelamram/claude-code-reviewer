@@ -47,9 +47,18 @@ interface AuditLoggerOptions {
   secretPatterns?:  RegExp[];    // additional patterns to redact beyond the built-in list
 }
 
+// 500 chars keeps individual table cells readable while preventing step-summary bloat.
 const MAX_DETAIL_VALUE_LENGTH = 500;
+// 200 chars captures enough of an error message to be actionable without leaking stack traces.
 const MAX_ERR_MESSAGE_LENGTH  = 200;
 
+/**
+ * Records and persists a tamper-evident log of all repository-state actions
+ * taken during a single code review run.
+ *
+ * Lifecycle: construct → record() (zero or more times) → flush() / flushStepSummary()
+ * Not thread-safe — intended for single-threaded, single-run use within Node.js.
+ */
 class AuditLogger {
   private readonly auditData: AuditLog;
   private readonly auditLogPath: string | undefined;
@@ -66,7 +75,7 @@ class AuditLogger {
     /ghp_[a-zA-Z0-9]{36}/g,            // GitHub classic PAT
     /ghs_[a-zA-Z0-9]{36}/g,            // GitHub Actions token
     /github_pat_[a-zA-Z0-9_]{82}/g,    // GitHub fine-grained PAT
-    /sk-[a-zA-Z0-9]{32,}/g,            // Anthropic / OpenAI-style API key
+    /\bsk-[a-zA-Z0-9]{32,}\b/g,        // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
     /Bearer\s+\S{20,}/gi,              // generic Bearer token
   ];
 
@@ -150,10 +159,26 @@ class AuditLogger {
       .replace(/>/g, '&gt;');
   }
 
-  // Strips non-printable chars and caps length so error messages are safe to log.
+  // Applies all secret patterns to a single string. Resets lastIndex before
+  // each replace so g-flag regex state never leaks between invocations.
+  private redactString(value: string): string {
+    let result = value;
+    for (const pattern of this.allSecretPatterns) {
+      pattern.lastIndex = 0;
+      result = result.replace(pattern, '[REDACTED]');
+    }
+    return result;
+  }
+
+  // Strips non-printable chars, file-system paths, and caps length so error
+  // messages are safe to log without exposing sensitive path information.
   private safeErr(err: unknown): string {
     const msg = err instanceof Error ? err.message : String(err);
-    return msg.replace(/[^\x20-\x7E]/g, '').slice(0, MAX_ERR_MESSAGE_LENGTH);
+    return msg
+      .replace(/[^\x20-\x7E]/g, '')
+      .replace(/(?:\/[\w.\-]+){2,}/g, '[path]')         // Unix-style paths
+      .replace(/[A-Z]:\\(?:[\w.\-]+\\?)+/gi, '[path]')  // Windows-style paths
+      .slice(0, MAX_ERR_MESSAGE_LENGTH);
   }
 
   // Retains only allowlisted keys; warns with a count (not key names) when
@@ -174,25 +199,24 @@ class AuditLogger {
     return filtered;
   }
 
-  // structuredClone handles circular references; falls back to shallow copy if
-  // the value contains non-cloneable types (functions, symbols, etc.).
+  // Tries structuredClone (handles circulars), then JSON round-trip (handles
+  // non-cloneable primitives), then falls back to shallow copy as last resort.
   private static cloneDetails(details: Record<string, unknown>): Record<string, unknown> {
     try {
       return structuredClone(details);
     } catch {
-      return { ...details };
+      try {
+        return JSON.parse(JSON.stringify(details)) as Record<string, unknown>;
+      } catch {
+        return { ...details };
+      }
     }
   }
 
-  // JSON.stringify replacer that redacts all patterns in allSecretPatterns from
-  // string values at any nesting level before the audit log is persisted to disk.
+  // JSON.stringify replacer — delegates to redactString for all string values
+  // at any nesting level before the audit log is persisted to disk.
   private secretReplacer(_key: string, value: unknown): unknown {
-    if (typeof value !== 'string') return value;
-    let result = value;
-    for (const pattern of this.allSecretPatterns) {
-      result = result.replace(pattern, '[REDACTED]');
-    }
-    return result;
+    return typeof value === 'string' ? this.redactString(value) : value;
   }
 
   // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
@@ -254,7 +278,8 @@ class AuditLogger {
       '|---|---|',
     ];
     for (const [k, v] of Object.entries(entry.details)) {
-      const raw = JSON.stringify(v);
+      // Redact secrets from serialised values before they reach the step summary.
+      const raw = this.redactString(JSON.stringify(v));
       const truncated = raw.length > MAX_DETAIL_VALUE_LENGTH
         ? raw.slice(0, MAX_DETAIL_VALUE_LENGTH) + '…'
         : raw;
@@ -267,6 +292,7 @@ class AuditLogger {
     return lines;
   }
 
+  /** Renders the audit log as GitHub-flavoured markdown for step summaries. */
   toMarkdown(): string {
     const { entries } = this.auditData;
     const lines = this.markdownHeader();

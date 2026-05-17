@@ -42,12 +42,12 @@ interface OrchestratorServices {
 }
 
 interface IssueCreationContext {
-  owner:    string;
-  repo:     string;
+  owner: string;
+  repo: string;
   prNumber: number;
-  headSha:  string;
+  headSha: string;
   analysis: AnalysisResult;
-  audit:    AuditLogger;
+  audit: AuditLogger;
 }
 
 function loadConfig(): OrchestratorConfig {
@@ -280,7 +280,7 @@ class CodeReviewOrchestrator {
       : 'No blocking code review issues found';
     try {
       await this.githubService.setCommitStatus(owner, repo, headSha, state, description);
-      audit.record('commit_status_set', { owner, repo, headSha, state, description }, false,
+      audit.record('commit_status_set', { headSha, state, description }, false,
         `Set commit status to "${state}" via GitHub API: POST /repos/${owner}/${repo}/statuses/${headSha}`);
     } catch (err: unknown) {
       this.log.warn(`⚠️  Commit status update failed: ${this.safeErrorMessage(err)}`);
@@ -302,7 +302,7 @@ class CodeReviewOrchestrator {
       const description = 'No blocking code review issues found';
       try {
         await this.githubService.setCommitStatus(owner, repo, headSha, state, description);
-        audit.record('commit_status_set', { owner, repo, headSha, state, description }, false,
+        audit.record('commit_status_set', { headSha, state, description }, false,
           `Set commit status to "${state}" via GitHub API: POST /repos/${owner}/${repo}/statuses/${headSha}`);
       } catch (err: unknown) {
         this.log.warn(`⚠️  Status update failed (review still passed): ${this.safeErrorMessage(err)}`);
@@ -335,7 +335,7 @@ class CodeReviewOrchestrator {
       const description = `${created} code review issue(s) must be resolved before merging`;
       try {
         await this.githubService.setCommitStatus(owner, repo, headSha, state, description);
-        audit.record('commit_status_set', { owner, repo, headSha, state, description }, false,
+        audit.record('commit_status_set', { headSha, state, description }, false,
           `Set commit status to "${state}" via GitHub API: POST /repos/${owner}/${repo}/statuses/${headSha}`);
       } catch (err: unknown) {
         this.log.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
