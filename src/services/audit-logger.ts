@@ -43,9 +43,10 @@ interface AuditLoggerOptions {
   runId?: string;
   logger?: Logger;
   fileSystem?: FileSystem;
-  now?: () => Date;           // injectable clock for deterministic tests
-  secretPatterns?: RegExp[];  // additional patterns to redact beyond the built-in list
-  // When non-empty, isSafePath also requires paths to start with one of these
+  now?: () => Date;                     // injectable clock for deterministic tests
+  secretPatterns?: RegExp[];            // additional patterns beyond the built-in list
+  realpathSync?: (p: string) => string; // injectable for testing path-safety logic
+  // When non-empty, isSafePath also requires paths to resolve under one of these
   // prefixes. Provide the known-safe directories for the runtime environment
   // (e.g. ['/tmp/', runnerTemp + '/']) to guard against symlink attacks and
   // misconfigured env vars.
@@ -73,6 +74,7 @@ class AuditLogger {
   private readonly logger: Logger;
   private readonly fileSystem: FileSystem;
   private readonly now: () => Date;
+  private readonly realpathSync: (p: string) => string;
   // Merged at construction so no per-call spread; caller patterns are cloned
   // via new RegExp(source, flags) to neutralise any external lastIndex state.
   private readonly allSecretPatterns: RegExp[];
@@ -83,6 +85,8 @@ class AuditLogger {
   private summaryPromise: Promise<boolean> | undefined;
 
   private static readonly MAX_ENTRIES = 1_000;
+  // Restricted permissions so other processes on shared CI runners cannot read it.
+  private static readonly AUDIT_FILE_MODE = 0o600;
   // Marker string checked when trimming partial matches at truncation boundaries.
   private static readonly REDACTED_MARKER = '[REDACTED]';
 
@@ -90,11 +94,11 @@ class AuditLogger {
   // No g flag here — these are stateless templates. The constructor clones each
   // into a per-instance RegExp with g added, so static lastIndex is never mutated.
   private static readonly SECRET_PATTERNS: RegExp[] = [
-    /ghp_[a-zA-Z0-9]{36}/,           // GitHub classic PAT
-    /ghs_[a-zA-Z0-9]{36}/,           // GitHub Actions token
-    /github_pat_[a-zA-Z0-9_]{82}/,   // GitHub fine-grained PAT
-    /\bsk-[a-zA-Z0-9]{32,}\b/,       // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
-    /Bearer\s+\S{20,}/i,             // generic Bearer token
+    /ghp_[a-zA-Z0-9]{36}/,          // GitHub classic PAT
+    /ghs_[a-zA-Z0-9]{36}/,          // GitHub Actions token
+    /github_pat_[a-zA-Z0-9_]{82}/,  // GitHub fine-grained PAT
+    /\bsk-[a-zA-Z0-9]{32,}\b/,      // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
+    /Bearer\s+\S{20,}/i,            // generic Bearer token
   ];
 
   // Allowlist of detail keys permitted in audit entries. Fields outside this
@@ -117,14 +121,22 @@ class AuditLogger {
     prNumber: number,
     options: AuditLoggerOptions = {}
   ) {
+    if (!repository || typeof repository !== 'string') {
+      throw new Error('AuditLogger: repository must be a non-empty string');
+    }
+    if (!Number.isInteger(prNumber) || prNumber <= 0) {
+      throw new Error('AuditLogger: prNumber must be a positive integer');
+    }
+
     const {
       auditLogPath,
       stepSummaryPath,
-      runId              = 'local',
-      logger             = new Logger(),
-      fileSystem         = fs.promises,
-      now                = () => new Date(),
-      secretPatterns     = [],
+      runId               = 'local',
+      logger              = new Logger(),
+      fileSystem          = fs.promises,
+      now                 = () => new Date(),
+      secretPatterns      = [],
+      realpathSync        = fs.realpathSync,
       allowedPathPrefixes = [],
     } = options;
 
@@ -133,6 +145,8 @@ class AuditLogger {
     this.logger          = logger;
     this.fileSystem      = fileSystem;
     this.now             = now;
+    this.realpathSync    = realpathSync;
+
     // Resolve prefix paths to their real (symlink-free) forms at construction so
     // that isSafePath comparisons work correctly on platforms where the prefix
     // itself is a symlink (e.g. /tmp → /private/tmp on macOS). Falls back to the
@@ -140,11 +154,12 @@ class AuditLogger {
     this.allowedPrefixes = allowedPathPrefixes.map(p => {
       const stripped = p.endsWith('/') ? p.slice(0, -1) : p;
       try {
-        return fs.realpathSync(stripped) + '/';
+        return this.realpathSync(stripped) + '/';
       } catch {
         return p.endsWith('/') ? p : p + '/';
       }
     });
+
     // Clone every pattern into a fresh per-instance RegExp with g ensured so:
     // (a) static lastIndex state is never mutated across instances, and
     // (b) replace() replaces all occurrences, not just the first.
@@ -154,6 +169,7 @@ class AuditLogger {
       ...AuditLogger.SECRET_PATTERNS.map(withGlobal),
       ...secretPatterns.map(withGlobal),
     ];
+
     this.auditData = {
       skillName: 'claude-code-reviewer',
       runId,
@@ -176,8 +192,8 @@ class AuditLogger {
     }
     this.auditData.entries.push({
       type,
-      timestamp:  this.now().toISOString(),
-      details:    this.cloneDetails(this.filterDetails(details)),
+      timestamp: this.now().toISOString(),
+      details: this.cloneDetails(this.filterDetails(details)),
       revertible,
       revertInstructions,
     });
@@ -196,7 +212,7 @@ class AuditLogger {
       // The target file may not exist yet, but its parent directory must.
       // Resolving the parent converts symlinks so the prefix check compares
       // real paths against real prefixes (both resolved at construction).
-      const realDir  = fs.realpathSync(path.dirname(p));
+      const realDir = this.realpathSync(path.dirname(p));
       const realFull = path.join(realDir, path.basename(p));
       if (this.allowedPrefixes.length > 0 && !this.allowedPrefixes.some(prefix => realFull.startsWith(prefix))) {
         this.logger.warn('Audit: path rejected — real path resolves outside allowed prefixes (possible symlink)');
@@ -238,8 +254,8 @@ class AuditLogger {
     const msg = err instanceof Error ? err.message : String(err);
     return msg
       .replace(/[^\x20-\x7E]/g, '')
-      .replace(/(?:\/[\w.\-]+){2,}/g, '[path]')         // Unix-style paths
-      .replace(/[A-Z]:\\(?:[\w.\-]+\\?)+/gi, '[path]')  // Windows-style paths
+      .replace(/(?:\/[\w.\-]+){2,}/g, '[path]')        // Unix-style paths
+      .replace(/[A-Z]:\\(?:[\w.\-]+\\?)+/gi, '[path]') // Windows-style paths
       .slice(0, MAX_ERR_MESSAGE_CHARS);
   }
 
@@ -278,9 +294,9 @@ class AuditLogger {
     }
   }
 
-  // After truncation, a '[REDACTED]' replacement inserted by redactString could be
-  // split at the cut point (e.g. '[REDACT'). Check longest-to-shortest prefixes of
-  // the marker and remove any partial suffix so the truncated value is clean.
+  // After truncation, a '[REDACTED]' replacement could be split at the cut point
+  // (e.g. '[REDACT'). Check longest-to-shortest prefixes of the marker and remove
+  // any partial suffix so the truncated value is clean.
   private trimPartialRedacted(s: string): string {
     const marker = AuditLogger.REDACTED_MARKER;
     for (let len = marker.length - 1; len >= 1; len--) {
@@ -295,8 +311,7 @@ class AuditLogger {
     return typeof value === 'string' ? this.redactString(value) : value;
   };
 
-  // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
-  // so other processes on shared CI runners cannot read it.
+  // Writes the audit JSON to auditLogPath with restricted permissions.
   // Retrieve later via: gh run download <runId> -n code-reviewer-audit
   // Idempotent via promise memoization — concurrent callers share the same Promise.
   async flush(): Promise<boolean> {
@@ -319,7 +334,7 @@ class AuditLogger {
       await this.fileSystem.writeFile(
         dest,
         JSON.stringify(this.auditData, this.secretReplacer, 2),
-        { encoding: 'utf8', mode: 0o600 }
+        { encoding: 'utf8', mode: AuditLogger.AUDIT_FILE_MODE }
       );
       return true;
     } catch (err) {
