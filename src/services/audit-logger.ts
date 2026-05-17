@@ -43,7 +43,8 @@ interface AuditLoggerOptions {
   runId?:           string;
   logger?:          Logger;
   fileSystem?:      FileSystem;
-  now?:             () => Date; // injectable clock for deterministic tests
+  now?:             () => Date;     // injectable clock for deterministic tests
+  secretPatterns?:  RegExp[];       // additional patterns to redact beyond the built-in list
 }
 
 const MAX_DETAIL_VALUE_LENGTH = 500;
@@ -57,13 +58,16 @@ class AuditLogger {
   private readonly logger: Logger;
   private readonly fileSystem: FileSystem;
   private readonly now: () => Date;
+  private readonly secretPatterns: RegExp[];
 
-  // Patterns scrubbed from flushed JSON to prevent accidental secret persistence.
+  // Built-in patterns cover the most common CI secret formats.
+  // Callers can extend via AuditLoggerOptions.secretPatterns.
   private static readonly SECRET_PATTERNS: RegExp[] = [
-    /ghp_[a-zA-Z0-9]{36}/g,   // GitHub personal access token
-    /ghs_[a-zA-Z0-9]{36}/g,   // GitHub Actions token
-    /sk-[a-zA-Z0-9]{32,}/g,   // Anthropic / OpenAI-style API key
-    /Bearer\s+\S{20,}/gi,      // generic Bearer token in Authorization header
+    /ghp_[a-zA-Z0-9]{36}/g,            // GitHub classic PAT
+    /ghs_[a-zA-Z0-9]{36}/g,            // GitHub Actions token
+    /github_pat_[a-zA-Z0-9_]{82}/g,    // GitHub fine-grained PAT
+    /sk-[a-zA-Z0-9]{32,}/g,            // Anthropic / OpenAI-style API key
+    /Bearer\s+\S{20,}/gi,              // generic Bearer token
   ];
 
   constructor(
@@ -74,10 +78,11 @@ class AuditLogger {
     const {
       auditLogPath,
       stepSummaryPath,
-      runId      = 'local',
-      logger     = new Logger(),
-      fileSystem = fs.promises,
-      now        = () => new Date(),
+      runId          = 'local',
+      logger         = new Logger(),
+      fileSystem     = fs.promises,
+      now            = () => new Date(),
+      secretPatterns = [],
     } = options;
 
     this.auditLogPath    = auditLogPath;
@@ -85,6 +90,7 @@ class AuditLogger {
     this.logger          = logger;
     this.fileSystem      = fileSystem;
     this.now             = now;
+    this.secretPatterns  = secretPatterns;
     this.auditData = {
       skillName: 'claude-code-reviewer',
       runId,
@@ -142,12 +148,13 @@ class AuditLogger {
     }
   }
 
-  // JSON.stringify replacer that redacts known secret patterns from string values
-  // at any nesting level before the audit log is persisted to disk.
-  private static secretReplacer(_key: string, value: unknown): unknown {
+  // JSON.stringify replacer that redacts built-in and caller-supplied secret
+  // patterns from string values at any nesting level before persisting to disk.
+  // String.replace() manages regex lastIndex internally — g-flag is safe here.
+  private secretReplacer(_key: string, value: unknown): unknown {
     if (typeof value !== 'string') return value;
     let result = value;
-    for (const pattern of AuditLogger.SECRET_PATTERNS) {
+    for (const pattern of [...AuditLogger.SECRET_PATTERNS, ...this.secretPatterns]) {
       result = result.replace(pattern, '[REDACTED]');
     }
     return result;
@@ -163,12 +170,12 @@ class AuditLogger {
     try {
       await this.fileSystem.writeFile(
         dest,
-        JSON.stringify(this.auditData, AuditLogger.secretReplacer, 2),
+        JSON.stringify(this.auditData, (k, v) => this.secretReplacer(k, v), 2),
         { encoding: 'utf8', mode: 0o600 }
       );
       return true;
     } catch (err) {
-      this.logger.warn(`Audit log flush failed: ${this.safeErr(err)}`);
+      this.logger.error(`Audit log flush failed — data loss: ${this.safeErr(err)}`);
       return false;
     }
   }
@@ -182,7 +189,7 @@ class AuditLogger {
       await this.fileSystem.appendFile(dest, '\n\n' + this.toMarkdown(), 'utf8');
       return true;
     } catch (err) {
-      this.logger.warn(`Step summary flush failed: ${this.safeErr(err)}`);
+      this.logger.error(`Step summary flush failed: ${this.safeErr(err)}`);
       return false;
     }
   }

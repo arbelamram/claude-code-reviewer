@@ -167,10 +167,10 @@ class CodeReviewOrchestrator {
         audit.flushStepSummary(),
       ]);
       if (flushResult.status === 'rejected') {
-        this.log.warn(`Audit flush error: ${this.safeErrorMessage(flushResult.reason)}`);
+        this.log.error(`Audit flush error: ${this.safeErrorMessage(flushResult.reason)}`);
       }
       if (summaryResult.status === 'rejected') {
-        this.log.warn(`Step summary flush error: ${this.safeErrorMessage(summaryResult.reason)}`);
+        this.log.error(`Step summary flush error: ${this.safeErrorMessage(summaryResult.reason)}`);
       }
     }
   }
