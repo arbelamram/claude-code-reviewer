@@ -69,4 +69,13 @@ jobs:
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AUDIT_LOG_PATH: /tmp/code-reviewer-audit.json
         run: npm run review
+
+      - name: Upload audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-reviewer-audit
+          path: /tmp/code-reviewer-audit.json
+          if-no-files-found: ignore

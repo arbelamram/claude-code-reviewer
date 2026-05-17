@@ -4,6 +4,7 @@ import { GitHubService, type PRDiff } from './services/github/github-service.js'
 import { GitHubConfigManager } from './services/github/github-config.js';
 import { ClaudeService } from './services/claude-service.js';
 import { Logger } from './services/logger.js';
+import { AuditLogger } from './services/audit-logger.js';
 import * as path from 'path';
 
 // ── Module-level constants ──────────────────────────────────────────────────
@@ -120,6 +121,7 @@ class CodeReviewOrchestrator {
     this.log.info(`\n🚀 Starting Code Review for PR #${options.prNumber}`);
     this.log.info(`📍 Repository: ${options.owner}/${options.repo}\n`);
 
+    const audit = new AuditLogger(`${options.owner}/${options.repo}`, options.prNumber);
     try {
       const { prContext, diffs } = await this.fetchPRData(options);
       const analysis             = await this.analyseCode(diffs);
@@ -128,10 +130,10 @@ class CodeReviewOrchestrator {
       let issueCount = 0;
       if (this.config.issueCreationEnabled) {
         issueCount = await this.createIssuesForProblems(
-          options.owner, options.repo, options.prNumber, prContext.headSha, analysis
+          options.owner, options.repo, options.prNumber, prContext.headSha, analysis, audit
         );
       } else {
-        await this.setStatusFromAnalysis(options.owner, options.repo, prContext.headSha, analysis);
+        await this.setStatusFromAnalysis(options.owner, options.repo, prContext.headSha, analysis, audit);
       }
 
       this.logReviewSummary(options.prNumber, inlineCount, issueCount);
@@ -139,6 +141,9 @@ class CodeReviewOrchestrator {
       const msg = this.safeErrorMessage(error);
       this.log.error(`❌ Code review failed for PR #${options.prNumber}: ${msg}`);
       throw new Error(`Code review failed for PR #${options.prNumber}: ${msg}`);
+    } finally {
+      audit.flush();
+      audit.flushStepSummary();
     }
   }
 
@@ -235,23 +240,20 @@ class CodeReviewOrchestrator {
     owner: string,
     repo: string,
     headSha: string,
-    analysis: AnalysisResult
+    analysis: AnalysisResult,
+    audit: AuditLogger
   ): Promise<void> {
     const blocking = analysis.issues.filter(i => i.severity === 'high' || i.severity === 'medium');
+    const state       = blocking.length > 0
+      ? CodeReviewOrchestrator.COMMIT_STATE.FAILURE
+      : CodeReviewOrchestrator.COMMIT_STATE.SUCCESS;
+    const description = blocking.length > 0
+      ? `${blocking.length} issue(s) found — push fixes to re-run review`
+      : 'No blocking code review issues found';
     try {
-      if (blocking.length > 0) {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.FAILURE,
-          `${blocking.length} issue(s) found — push fixes to re-run review`
-        );
-      } else {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
-          'No blocking code review issues found'
-        );
-      }
+      await this.githubService.setCommitStatus(owner, repo, headSha, state, description);
+      audit.record('commit_status_set', { owner, repo, headSha, state, description }, false,
+        `Set commit status to "${state}" via GitHub API: POST /repos/${owner}/${repo}/statuses/${headSha}`);
     } catch (err: unknown) {
       this.log.warn(`⚠️  Commit status update failed: ${this.safeErrorMessage(err)}`);
     }
@@ -264,7 +266,8 @@ class CodeReviewOrchestrator {
     repo: string,
     prNumber: number,
     headSha: string,
-    analysis: AnalysisResult
+    analysis: AnalysisResult,
+    audit: AuditLogger
   ): Promise<number> {
     const actionable = analysis.issues.filter(
       i => i.severity === 'high' || i.severity === 'medium'
@@ -272,12 +275,12 @@ class CodeReviewOrchestrator {
 
     if (actionable.length === 0) {
       this.log.info('ℹ️  No high/medium issues — setting commit status to success');
+      const state       = CodeReviewOrchestrator.COMMIT_STATE.SUCCESS;
+      const description = 'No blocking code review issues found';
       try {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
-          'No blocking code review issues found'
-        );
+        await this.githubService.setCommitStatus(owner, repo, headSha, state, description);
+        audit.record('commit_status_set', { owner, repo, headSha, state, description }, false,
+          `Set commit status to "${state}" via GitHub API: POST /repos/${owner}/${repo}/statuses/${headSha}`);
       } catch (err: unknown) {
         this.log.warn(`⚠️  Status update failed (review still passed): ${this.safeErrorMessage(err)}`);
       }
@@ -305,12 +308,12 @@ class CodeReviewOrchestrator {
     }
 
     if (created > 0) {
+      const state       = CodeReviewOrchestrator.COMMIT_STATE.FAILURE;
+      const description = `${created} code review issue(s) must be resolved before merging`;
       try {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.FAILURE,
-          `${created} code review issue(s) must be resolved before merging`
-        );
+        await this.githubService.setCommitStatus(owner, repo, headSha, state, description);
+        audit.record('commit_status_set', { owner, repo, headSha, state, description }, false,
+          `Set commit status to "${state}" via GitHub API: POST /repos/${owner}/${repo}/statuses/${headSha}`);
       } catch (err: unknown) {
         this.log.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
       }
