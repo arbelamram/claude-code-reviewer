@@ -82,6 +82,10 @@ class AuditLogger {
   private flushPromise: Promise<boolean> | undefined;
   private summaryPromise: Promise<boolean> | undefined;
 
+  private static readonly MAX_ENTRIES = 1_000;
+  // Marker string checked when trimming partial matches at truncation boundaries.
+  private static readonly REDACTED_MARKER = '[REDACTED]';
+
   // Built-in patterns cover the most common CI secret formats.
   // No g flag here — these are stateless templates. The constructor clones each
   // into a per-instance RegExp with g added, so static lastIndex is never mutated.
@@ -129,7 +133,18 @@ class AuditLogger {
     this.logger          = logger;
     this.fileSystem      = fileSystem;
     this.now             = now;
-    this.allowedPrefixes = allowedPathPrefixes;
+    // Resolve prefix paths to their real (symlink-free) forms at construction so
+    // that isSafePath comparisons work correctly on platforms where the prefix
+    // itself is a symlink (e.g. /tmp → /private/tmp on macOS). Falls back to the
+    // nominal path if the directory does not yet exist.
+    this.allowedPrefixes = allowedPathPrefixes.map(p => {
+      const stripped = p.endsWith('/') ? p.slice(0, -1) : p;
+      try {
+        return fs.realpathSync(stripped) + '/';
+      } catch {
+        return p.endsWith('/') ? p : p + '/';
+      }
+    });
     // Clone every pattern into a fresh per-instance RegExp with g ensured so:
     // (a) static lastIndex state is never mutated across instances, and
     // (b) replace() replaces all occurrences, not just the first.
@@ -155,6 +170,10 @@ class AuditLogger {
     revertible = false,
     revertInstructions?: string
   ): void {
+    if (this.auditData.entries.length >= AuditLogger.MAX_ENTRIES) {
+      this.logger.warn(`Audit: entry limit (${AuditLogger.MAX_ENTRIES}) reached — entry dropped`);
+      return;
+    }
     this.auditData.entries.push({
       type,
       timestamp:  this.now().toISOString(),
@@ -164,15 +183,30 @@ class AuditLogger {
     });
   }
 
-  // Rejects paths with traversal components (e.g. /tmp/../etc/passwd).
-  // When allowedPrefixes is set, also verifies the path starts with a known-safe
-  // prefix, guarding against symlinks that resolve outside the expected directory.
+  // Rejects paths with traversal components or that resolve outside allowed prefixes.
+  // Uses realpathSync on the parent directory (which must exist for a write) to
+  // detect symlinks pointing outside the expected location. Logs a warning on
+  // every rejection so callers can see why a flush path was silently skipped.
   private isSafePath(p: string): boolean {
-    if (!path.isAbsolute(p) || path.resolve(p) !== p) return false;
-    if (this.allowedPrefixes.length > 0) {
-      return this.allowedPrefixes.some(prefix => p.startsWith(prefix));
+    if (!path.isAbsolute(p) || path.resolve(p) !== p) {
+      this.logger.warn('Audit: path rejected — not absolute or contains traversal components');
+      return false;
     }
-    return true;
+    try {
+      // The target file may not exist yet, but its parent directory must.
+      // Resolving the parent converts symlinks so the prefix check compares
+      // real paths against real prefixes (both resolved at construction).
+      const realDir  = fs.realpathSync(path.dirname(p));
+      const realFull = path.join(realDir, path.basename(p));
+      if (this.allowedPrefixes.length > 0 && !this.allowedPrefixes.some(prefix => realFull.startsWith(prefix))) {
+        this.logger.warn('Audit: path rejected — real path resolves outside allowed prefixes (possible symlink)');
+        return false;
+      }
+      return true;
+    } catch {
+      this.logger.warn('Audit: path rejected — parent directory not accessible');
+      return false;
+    }
   }
 
   // Escapes characters that would break a markdown table cell or inject HTML.
@@ -242,6 +276,17 @@ class AuditLogger {
         return { ...details };
       }
     }
+  }
+
+  // After truncation, a '[REDACTED]' replacement inserted by redactString could be
+  // split at the cut point (e.g. '[REDACT'). Check longest-to-shortest prefixes of
+  // the marker and remove any partial suffix so the truncated value is clean.
+  private trimPartialRedacted(s: string): string {
+    const marker = AuditLogger.REDACTED_MARKER;
+    for (let len = marker.length - 1; len >= 1; len--) {
+      if (s.endsWith(marker.slice(0, len))) return s.slice(0, -len);
+    }
+    return s;
   }
 
   // Bound arrow property so it can be passed directly to JSON.stringify without
@@ -336,7 +381,7 @@ class AuditLogger {
         raw = '[unserializable]';
       }
       const truncated = raw.length > MAX_DETAIL_VALUE_CHARS
-        ? raw.slice(0, MAX_DETAIL_VALUE_CHARS) + '…'
+        ? this.trimPartialRedacted(raw.slice(0, MAX_DETAIL_VALUE_CHARS)) + '…'
         : raw;
       lines.push(`| ${s(k)} | \`${s(truncated)}\` |`);
     }
