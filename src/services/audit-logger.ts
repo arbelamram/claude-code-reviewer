@@ -43,25 +43,25 @@ interface AuditLoggerOptions {
   runId?:           string;
   logger?:          Logger;
   fileSystem?:      FileSystem;
-  now?:             () => Date;     // injectable clock for deterministic tests
-  secretPatterns?:  RegExp[];       // additional patterns to redact beyond the built-in list
+  now?:             () => Date;  // injectable clock for deterministic tests
+  secretPatterns?:  RegExp[];    // additional patterns to redact beyond the built-in list
 }
 
 const MAX_DETAIL_VALUE_LENGTH = 500;
 const MAX_ERR_MESSAGE_LENGTH  = 200;
 
 class AuditLogger {
-  private readonly entries: AuditEntry[] = [];
   private readonly auditData: AuditLog;
   private readonly auditLogPath: string | undefined;
   private readonly stepSummaryPath: string | undefined;
   private readonly logger: Logger;
   private readonly fileSystem: FileSystem;
   private readonly now: () => Date;
-  private readonly secretPatterns: RegExp[];
+  // Merged at construction so no per-call spread; caller patterns are cloned
+  // via new RegExp(source, flags) to neutralise any external lastIndex state.
+  private readonly allSecretPatterns: RegExp[];
 
   // Built-in patterns cover the most common CI secret formats.
-  // Callers can extend via AuditLoggerOptions.secretPatterns.
   private static readonly SECRET_PATTERNS: RegExp[] = [
     /ghp_[a-zA-Z0-9]{36}/g,            // GitHub classic PAT
     /ghs_[a-zA-Z0-9]{36}/g,            // GitHub Actions token
@@ -69,6 +69,21 @@ class AuditLogger {
     /sk-[a-zA-Z0-9]{32,}/g,            // Anthropic / OpenAI-style API key
     /Bearer\s+\S{20,}/gi,              // generic Bearer token
   ];
+
+  // Allowlist of detail keys permitted in audit entries. Fields outside this
+  // set are dropped to prevent accidental PII / secret persistence.
+  private static readonly SAFE_DETAIL_KEYS = new Set<string>([
+    // repository context
+    'owner', 'repo', 'prNumber',
+    // commit / branch
+    'headSha', 'commitSha', 'branchName',
+    // commit status
+    'state', 'description',
+    // file operations
+    'filePath', 'fileStatus',
+    // issue / PR metadata
+    'issueNumber', 'issueTitle',
+  ]);
 
   constructor(
     repository: string,
@@ -85,19 +100,22 @@ class AuditLogger {
       secretPatterns = [],
     } = options;
 
-    this.auditLogPath    = auditLogPath;
-    this.stepSummaryPath = stepSummaryPath;
-    this.logger          = logger;
-    this.fileSystem      = fileSystem;
-    this.now             = now;
-    this.secretPatterns  = secretPatterns;
+    this.auditLogPath      = auditLogPath;
+    this.stepSummaryPath   = stepSummaryPath;
+    this.logger            = logger;
+    this.fileSystem        = fileSystem;
+    this.now               = now;
+    this.allSecretPatterns = [
+      ...AuditLogger.SECRET_PATTERNS,
+      ...secretPatterns.map(p => new RegExp(p.source, p.flags)),
+    ];
     this.auditData = {
       skillName: 'claude-code-reviewer',
       runId,
       startedAt: this.now().toISOString(),
       repository,
       prNumber,
-      entries:   this.entries,
+      entries:   [],
     };
   }
 
@@ -107,10 +125,10 @@ class AuditLogger {
     revertible = false,
     revertInstructions?: string
   ): void {
-    this.entries.push({
+    this.auditData.entries.push({
       type,
-      timestamp: this.now().toISOString(),
-      details:   AuditLogger.cloneDetails(details),
+      timestamp:  this.now().toISOString(),
+      details:    AuditLogger.cloneDetails(this.filterDetails(details)),
       revertible,
       revertInstructions,
     });
@@ -138,6 +156,24 @@ class AuditLogger {
     return msg.replace(/[^\x20-\x7E]/g, '').slice(0, MAX_ERR_MESSAGE_LENGTH);
   }
 
+  // Retains only allowlisted keys; warns with a count (not key names) when
+  // fields are dropped to avoid leaking sensitive field names in logs.
+  private filterDetails(details: Record<string, unknown>): Record<string, unknown> {
+    const filtered: Record<string, unknown> = {};
+    let dropped = 0;
+    for (const [k, v] of Object.entries(details)) {
+      if (AuditLogger.SAFE_DETAIL_KEYS.has(k)) {
+        filtered[k] = v;
+      } else {
+        dropped++;
+      }
+    }
+    if (dropped > 0) {
+      this.logger.warn(`Audit: ${dropped} field(s) excluded from details (not in allowlist)`);
+    }
+    return filtered;
+  }
+
   // structuredClone handles circular references; falls back to shallow copy if
   // the value contains non-cloneable types (functions, symbols, etc.).
   private static cloneDetails(details: Record<string, unknown>): Record<string, unknown> {
@@ -148,13 +184,12 @@ class AuditLogger {
     }
   }
 
-  // JSON.stringify replacer that redacts built-in and caller-supplied secret
-  // patterns from string values at any nesting level before persisting to disk.
-  // String.replace() manages regex lastIndex internally — g-flag is safe here.
+  // JSON.stringify replacer that redacts all patterns in allSecretPatterns from
+  // string values at any nesting level before the audit log is persisted to disk.
   private secretReplacer(_key: string, value: unknown): unknown {
     if (typeof value !== 'string') return value;
     let result = value;
-    for (const pattern of [...AuditLogger.SECRET_PATTERNS, ...this.secretPatterns]) {
+    for (const pattern of this.allSecretPatterns) {
       result = result.replace(pattern, '[REDACTED]');
     }
     return result;
@@ -162,8 +197,7 @@ class AuditLogger {
 
   // Writes the audit JSON to auditLogPath with restricted permissions (0o600)
   // so other processes on shared CI runners cannot read it.
-  // The workflow uploads this file as a GitHub Actions artifact so Claude
-  // can retrieve it later via: gh run download <runId> -n code-reviewer-audit
+  // Retrieve later via: gh run download <runId> -n code-reviewer-audit
   async flush(): Promise<boolean> {
     const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return false;
