@@ -11,6 +11,7 @@ const DEFAULT_MAX_PROMPT_TOKENS    = 150_000;
 const DEFAULT_TARGET_PROMPT_TOKENS = 100_000;
 const MAX_ISSUE_TITLE_LENGTH       = 69;
 const ISSUE_CREATION_DELAY_MS      = 1_000;
+const ISSUE_CREATION_MAX_RETRIES   = 3;
 
 // ── Interfaces ─────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ function loadConfig(): OrchestratorConfig {
 class CodeReviewOrchestrator {
   private standardsEngine: StandardsEngine;
   private githubService: GitHubService;
-  private claudeApiKey: string;
+  private claudeService: ClaudeService; // stores the service, not the raw key
   private readonly config: OrchestratorConfig;
 
   private static readonly SEVERITY_LABEL: Record<string, string> = {
@@ -75,12 +76,11 @@ class CodeReviewOrchestrator {
     try {
       githubToken = configManager.getToken();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      throw new Error(`Failed to load GitHub token: ${msg}`);
+      throw new Error(`Failed to load GitHub token: ${this.safeErrorMessage(err)}`);
     }
 
     this.githubService = new GitHubService(githubToken);
-    this.claudeApiKey  = claudeApiKey;
+    this.claudeService = new ClaudeService(claudeApiKey);
     this.config        = config;
   }
 
@@ -106,16 +106,10 @@ class CodeReviewOrchestrator {
         await this.setStatusFromAnalysis(options.owner, options.repo, prContext.headSha, analysis);
       }
 
-      console.log(`\n✨ Code review complete for PR #${options.prNumber}!`);
-      console.log(`   📌 Posted ${inlineCount} inline comment(s) on specific lines`);
-      if (this.config.issueCreationEnabled) {
-        console.log(`   🐛 Created ${issueCount} GitHub issue(s) for problems to fix`);
-      } else {
-        console.log(`   ℹ️  Issue creation disabled — commit status reflects review outcome`);
-      }
+      this.logReviewSummary(options.prNumber, inlineCount, issueCount);
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : 'Unexpected error';
-      console.error(`❌ Code review failed for PR #${options.prNumber}: ${msg.slice(0, 200)}`);
+      const msg = this.safeErrorMessage(error);
+      console.error(`❌ Code review failed for PR #${options.prNumber}: ${msg}`);
       throw new Error(`Code review failed for PR #${options.prNumber}: ${msg}`);
     }
   }
@@ -163,7 +157,7 @@ class CodeReviewOrchestrator {
 
   private async analyseCode(diffs: PRDiff[]): Promise<AnalysisResult> {
     const combinedCode = this.prepareCombinedCode(diffs);
-    console.log(`🔨 Code prepared (${combinedCode.length} chars) — building prompt...`);
+    console.log('🔨 Code prepared — building prompt...');
 
     let prompt = this.standardsEngine.buildPrompt(combinedCode, 'mixed');
     const validation = this.validatePromptSize(prompt, diffs);
@@ -173,7 +167,7 @@ class CodeReviewOrchestrator {
     }
 
     console.log('🤖 Sending to Claude for analysis...');
-    const claudeResponse = await this.callClaudeAPI(prompt);
+    const claudeResponse = await this.claudeService.analyzeCode(prompt);
     console.log('✅ Analysis complete\n');
 
     return AnalysisFormatter.parseAnalysis(claudeResponse);
@@ -182,7 +176,7 @@ class CodeReviewOrchestrator {
   // ── Post results phase ─────────────────────────────────────────────────────
 
   private async postResults(options: ReviewOptions, analysis: AnalysisResult): Promise<number> {
-    const prComment     = AnalysisFormatter.formatForPRComment(analysis);
+    const prComment      = AnalysisFormatter.formatForPRComment(analysis);
     const reviewComments = AnalysisFormatter.convertToReviewComments(analysis);
 
     console.log('📤 Posting review to GitHub...');
@@ -231,8 +225,7 @@ class CodeReviewOrchestrator {
         );
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      console.warn(`⚠️  Commit status update failed: ${msg.slice(0, 120)}`);
+      console.warn(`⚠️  Commit status update failed: ${this.safeErrorMessage(err)}`);
     }
   }
 
@@ -258,8 +251,7 @@ class CodeReviewOrchestrator {
           'No blocking code review issues found'
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        console.warn(`⚠️  Status update failed (review still passed): ${msg.slice(0, 120)}`);
+        console.warn(`⚠️  Status update failed (review still passed): ${this.safeErrorMessage(err)}`);
       }
       return 0;
     }
@@ -274,18 +266,14 @@ class CodeReviewOrchestrator {
     let created = 0;
     for (const issue of capped) {
       const { title, body } = this.formatIssueContent(issue, prNumber);
+      // Fallback label ensures no undefined entries in the labels array
+      const severityLabel = CodeReviewOrchestrator.SEVERITY_LABEL[issue.severity] ?? 'priority: medium';
       try {
-        await this.githubService.createIssue(owner, repo, title, body, [
-          'code-review',
-          CodeReviewOrchestrator.SEVERITY_LABEL[issue.severity],
-        ]);
+        await this.createIssueWithRetry(owner, repo, title, body, ['code-review', severityLabel]);
         created++;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        console.warn(`⚠️  Could not create issue: ${msg.slice(0, 120)}`);
+        console.warn(`⚠️  Could not create issue: ${this.safeErrorMessage(err)}`);
       }
-      // Delay between requests to avoid GitHub secondary rate limits
-      await new Promise<void>(resolve => setTimeout(resolve, ISSUE_CREATION_DELAY_MS));
     }
 
     if (created > 0) {
@@ -296,15 +284,57 @@ class CodeReviewOrchestrator {
           `${created} code review issue(s) must be resolved before merging`
         );
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        console.warn(`⚠️  Status update failed: ${msg.slice(0, 120)}`);
+        console.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
       }
     }
 
     return created;
   }
 
+  // Retries with exponential backoff to handle GitHub secondary rate limits.
+  private async createIssueWithRetry(
+    owner: string,
+    repo: string,
+    title: string,
+    body: string,
+    labels: string[]
+  ): Promise<void> {
+    let delay = ISSUE_CREATION_DELAY_MS;
+    for (let attempt = 1; attempt <= ISSUE_CREATION_MAX_RETRIES; attempt++) {
+      try {
+        await this.githubService.createIssue(owner, repo, title, body, labels);
+        return;
+      } catch (err: unknown) {
+        if (attempt === ISSUE_CREATION_MAX_RETRIES) throw err;
+        console.warn(
+          `⚠️  Issue creation attempt ${attempt} failed, retrying in ${delay}ms: ${this.safeErrorMessage(err)}`
+        );
+        await new Promise<void>(resolve => setTimeout(resolve, delay));
+        delay *= 2;
+      }
+    }
+  }
+
+  // ── Logging ────────────────────────────────────────────────────────────────
+
+  private logReviewSummary(prNumber: number, inlineCount: number, issueCount: number): void {
+    console.log(`\n✨ Code review complete for PR #${prNumber}!`);
+    console.log(`   📌 Posted ${inlineCount} inline comment(s) on specific lines`);
+    if (this.config.issueCreationEnabled) {
+      console.log(`   🐛 Created ${issueCount} GitHub issue(s) for problems to fix`);
+    } else {
+      console.log(`   ℹ️  Issue creation disabled — commit status reflects review outcome`);
+    }
+  }
+
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  // Returns only printable ASCII from an error — prevents leaking stack traces,
+  // internal paths, or embedded secrets that may appear in exception messages.
+  private safeErrorMessage(err: unknown): string {
+    const raw = err instanceof Error ? err.message : 'Unknown error';
+    return raw.replace(/[^\x20-\x7E]/g, '').slice(0, 200);
+  }
 
   private estimateTokens(text: string): number {
     return Math.ceil(text.length / 4);
@@ -433,11 +463,6 @@ ${annotated}
     ].join('\n');
 
     return { title, body };
-  }
-
-  private async callClaudeAPI(prompt: string): Promise<string> {
-    const claude = new ClaudeService(this.claudeApiKey);
-    return claude.analyzeCode(prompt);
   }
 }
 
