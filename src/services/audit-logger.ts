@@ -318,7 +318,14 @@ class AuditLogger {
       if (!AuditLogger.SAFE_DETAIL_KEYS.has(k)) continue;
       // Redact before truncating — truncating first could split a secret at the
       // boundary, leaving a partial token that bypasses pattern matching.
-      const raw = this.redactString(JSON.stringify(v));
+      // Circular references or non-serializable values throw from JSON.stringify;
+      // catch them so the loop continues and remaining fields are still redacted.
+      let raw: string;
+      try {
+        raw = this.redactString(JSON.stringify(v));
+      } catch {
+        raw = '[unserializable]';
+      }
       const truncated = raw.length > MAX_DETAIL_VALUE_CHARS
         ? raw.slice(0, MAX_DETAIL_VALUE_CHARS) + '…'
         : raw;
