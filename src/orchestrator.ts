@@ -110,7 +110,7 @@ class CodeReviewOrchestrator {
       this.githubService = new GitHubService(githubToken);
     }
 
-    this.claudeService    = services.claudeService ?? new ClaudeService(claudeApiKey);
+    this.claudeService = services.claudeService ?? new ClaudeService(claudeApiKey);
     this.compiledExcludes = this.compileExcludePatterns(this.standardsEngine.getExcludePaths());
   }
 
@@ -415,18 +415,19 @@ class CodeReviewOrchestrator {
   }
 
   // Converts a glob pattern to a RegExp. Special regex chars are escaped first,
-  // then ** is replaced with .* (any path depth) and * with .* (any segment).
-  // Patterns MUST come from trusted config (standards.yaml) — never from user input.
+  // then ** (any depth, including /) becomes .* and single * (one segment, no /)
+  // becomes [^/]*. Patterns MUST come from trusted config — never from user input.
   private globToRegex(pattern: string): RegExp {
     try {
       const re = pattern
         .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // escape regex metacharacters
         .replace(/\*\*/g, '\x00')               // placeholder: ** → match any depth
-        .replace(/\*/g, '.*')                   // single * → match within segment
+        .replace(/\*/g, '[^/]*')                // single * → match within one path segment
         .replace(/\x00/g, '.*');                // restore ** placeholder as .*
       return new RegExp('^' + re + '$');
-    } catch {
-      this.log.warn(`⚠️  Exclude pattern "${pattern}" is invalid and will be skipped`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log.warn(`⚠️  Exclude pattern "${pattern}" is invalid (${msg}) — skipping`);
       return /(?!)/; // never matches
     }
   }
