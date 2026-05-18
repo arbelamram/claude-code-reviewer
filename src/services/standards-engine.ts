@@ -184,6 +184,10 @@ IMPORTANT:
 - Report the line number of the specific statement that is the problem, not a surrounding bracket or closing line.
 - Only include an entry in "issues" if the code requires an actual change. Do NOT add observations, compliments, or notes that require no action — if you have nothing to flag, return an empty array.
 - The "suggestion" field must describe a concrete code change. Never write "No change needed", "No action required", or any equivalent no-op phrase.
+- Do NOT flag code as missing (imports, declarations, dependencies) unless the absence is visible within the diff itself. Code that exists outside the diff is assumed correct — never infer a missing import from a partial view of a file.
+- Do NOT re-flag a concern that the code already explicitly acknowledges. If a comment documents a known tradeoff, limitation, or restriction (e.g. "trusted config only", "rough approximation"), treat it as accepted and do not raise it as an issue.
+- Do NOT flag package.json metadata (license, version, author, keywords), copyright notices, or README badge text as code issues. These are editorial choices, not correctness problems.
+- Do NOT suggest replacing a working implementation with a third-party library unless the current implementation has a demonstrable correctness bug. Preference for a library over custom code is an opinion, not a finding.
 
 Return ONLY valid JSON, no other text.`;
   }

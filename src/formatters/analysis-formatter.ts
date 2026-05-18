@@ -33,11 +33,15 @@ interface CodeIssue {
     //   2. Claude flagged something documented in the PR but not changed in this diff.
     // Matched against suggestion only (the most reliable signal); no g flag — .test() is stateless.
     private static readonly NO_OP_PATTERNS: RegExp[] = [
+      // Class 1: Claude returned a positive observation instead of an actual finding.
       /no\s+change\s+needed/i,
       /no\s+action\s+required/i,
       /no\s+action\s+needed/i,
       /no\s+issues?\s+(?:found|here)/i,
+      // Class 2: Claude flagged something documented in the PR but not changed in this diff.
       /not\s+(?:addressed|included|fixed)\s+in\s+this\s+(?:diff|pr|pull\s+request|change)/i,
+      // Class 3: Claude suggested swapping a working implementation for a library (opinion, not a bug).
+      /(?:use|replace\s+with|consider\s+using)\s+(?:a\s+)?(?:well[- ]tested\s+|battle[- ]tested\s+|established\s+)?(?:library|package)\s+(?:like\s+|such\s+as\s+)?\w/i,
     ];
 
     private static isNoOpIssue(issue: Partial<CodeIssue>): boolean {
