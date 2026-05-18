@@ -6,14 +6,16 @@ on:
 
 jobs:
   unblock-pr:
-    # Run only for code-review issues created by the repository owner.
-    # Issues are created via GH_TOKEN (a PAT owned by the repo owner), so
-    # user.login equals github.repository_owner — not 'github-actions[bot]'.
-    # This prevents write-access contributors from triggering unblock by closing
-    # issues they created themselves with the code-review label.
+    # Run only for issues that match all three criteria:
+    # 1. Carry the 'code-review' label applied by the skill
+    # 2. Were created by the repository owner (GH_TOKEN PAT owner)
+    # 3. Contain the skill's auto-generated body marker
+    # Combining all three prevents spurious triggers from unrelated issues
+    # that happen to carry the label or were closed by the repo owner.
     if: |
       contains(github.event.issue.labels.*.name, 'code-review') &&
-      github.event.issue.user.login == github.repository_owner
+      github.event.issue.user.login == github.repository_owner &&
+      contains(github.event.issue.body, 'Auto-generated from code review on PR #')
     runs-on: ubuntu-latest
 
     permissions:
