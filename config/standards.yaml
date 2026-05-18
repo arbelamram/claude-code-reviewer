@@ -11,6 +11,14 @@ review_config:
     - ".env*"
     - "*.example"
     - "CHANGELOG*"
+    - "package-lock.json"
+    - "yarn.lock"
+    - "**/*.png"
+    - "**/*.jpg"
+    - "**/*.jpeg"
+    - "**/*.svg"
+    - "**/*.ico"
+    - "**/*.gif"
 
 security:
   enabled: true

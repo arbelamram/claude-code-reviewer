@@ -385,19 +385,23 @@ class CodeReviewOrchestrator {
 
   // Returns true if fileName matches the given exclude pattern.
   // Supports: exact basename ("LICENSE"), prefix/suffix globs (".env*", "*.md"),
-  // and double-star extension globs ("**/*.md" — matches any depth).
+  // double-star extension globs ("**/*.md" — matches any depth),
+  // and path-relative patterns ("config/secrets.yaml" — matched against full path).
   private matchesExcludePattern(fileName: string, pattern: string): boolean {
-    const base = path.basename(fileName);
     if (pattern.startsWith('**/')) {
-      return this.matchesSimpleGlob(base, pattern.slice(3));
+      return this.matchesSimpleGlob(path.basename(fileName), pattern.slice(3));
     }
-    return this.matchesSimpleGlob(base, pattern);
+    if (pattern.includes('/')) {
+      // Match against the full forward-slash-normalised path
+      return this.matchesSimpleGlob(fileName.replace(/\\/g, '/'), pattern);
+    }
+    return this.matchesSimpleGlob(path.basename(fileName), pattern);
   }
 
   // Converts a simple glob (only * wildcards) to a regex and tests name against it.
   private matchesSimpleGlob(name: string, pattern: string): boolean {
     const regex = new RegExp(
-      '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
+      '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
     );
     return regex.test(name);
   }

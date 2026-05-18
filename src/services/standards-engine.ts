@@ -51,7 +51,8 @@ class StandardsEngine {
 
   /**
    * Return paths/globs that should be excluded from code review.
-   * Supports exact names, prefix globs (CHANGELOG*), and extension globs (**\/*.md).
+   * Supports exact names (LICENSE), prefix globs (CHANGELOG*), and
+   * double-star extension globs (see standards.yaml review_config.exclude_paths).
    */
   getExcludePaths(): string[] {
     return this.standards?.review_config?.exclude_paths ?? [];
