@@ -85,7 +85,7 @@ class StandardsEngine {
       lines.push(`## ${header}`);
       lines.push('');
       for (const entry of category.rules) {
-        if (!entry.description || !entry.severity) continue;
+        if (entry.enabled === false || !entry.description || !entry.severity) continue;
         lines.push(`- ${StandardsEngine.getRuleName(entry)}`);
         lines.push(`  Description: ${entry.description}`);
         lines.push(`  Severity: ${entry.severity}`);
@@ -93,10 +93,10 @@ class StandardsEngine {
       }
     };
 
-    appendCategory('SECURITY RULES',  this.standards.security);
+    appendCategory('SECURITY RULES',   this.standards.security);
     appendCategory('PERFORMANCE RULES', this.standards.performance);
-    appendCategory('STYLE RULES',      this.standards.style);
-    appendCategory('BEST PRACTICES',   this.standards.best_practices);
+    appendCategory('STYLE RULES',       this.standards.style);
+    appendCategory('BEST PRACTICES',    this.standards.best_practices);
 
     if (this.standards.languages) {
       for (const [lang, config] of Object.entries(this.standards.languages)) {
@@ -104,7 +104,7 @@ class StandardsEngine {
         lines.push(`## ${lang.toUpperCase()} RULES`);
         lines.push('');
         for (const entry of config.specific_rules) {
-          if (!entry.description || !entry.severity) continue;
+          if (entry.enabled === false || !entry.description || !entry.severity) continue;
           lines.push(`- ${StandardsEngine.getRuleName(entry)}`);
           lines.push(`  Description: ${entry.description}`);
           lines.push(`  Severity: ${entry.severity}`);
@@ -174,14 +174,14 @@ Return ONLY valid JSON, no other text.`;
       this.standards.best_practices,
     ]) {
       if (category?.enabled && Array.isArray(category.rules)) {
-        count += category.rules.filter(r => r.description && r.severity).length;
+        count += category.rules.filter(r => r.enabled !== false && r.description && r.severity).length;
       }
     }
 
     if (this.standards.languages) {
       for (const config of Object.values(this.standards.languages)) {
         if (config.enabled && Array.isArray(config.specific_rules)) {
-          count += config.specific_rules.filter(r => r.description && r.severity).length;
+          count += config.specific_rules.filter(r => r.enabled !== false && r.description && r.severity).length;
         }
       }
     }
@@ -189,8 +189,9 @@ Return ONLY valid JSON, no other text.`;
     return count;
   }
 
-  // Extracts the rule name from a rule entry — the key whose value is `true`
-  // (i.e., not a metadata key like description, severity, config, or enabled).
+  // Extracts the rule name from a rule entry — the first key that is not a
+  // metadata key (description, severity, config, enabled). Each well-formed
+  // entry is expected to have exactly one such key (e.g. check_sql_injection).
   private static getRuleName(entry: RuleEntry): string {
     return Object.keys(entry).find(k => !METADATA_KEYS.has(k)) ?? 'unknown';
   }
