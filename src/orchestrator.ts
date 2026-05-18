@@ -134,8 +134,13 @@ class CodeReviewOrchestrator {
     // vars and symlink attacks cannot redirect writes outside /tmp or RUNNER_TEMP.
     const allowedPathPrefixes: string[] = ['/tmp/'];
     if (process.env.RUNNER_TEMP) allowedPathPrefixes.push(process.env.RUNNER_TEMP + '/');
+    const rawAuditLogPath = process.env.AUDIT_LOG_PATH;
+    const auditLogPath = rawAuditLogPath?.endsWith('.json') ? rawAuditLogPath : undefined;
+    if (rawAuditLogPath && !auditLogPath) {
+      this.log.warn('AUDIT_LOG_PATH must end with .json — audit logging skipped');
+    }
     const audit = new AuditLogger(`${options.owner}/${options.repo}`, options.prNumber, {
-      auditLogPath: process.env.AUDIT_LOG_PATH,
+      auditLogPath,
       stepSummaryPath: process.env.GITHUB_STEP_SUMMARY,
       runId: process.env.GITHUB_RUN_ID,
       allowedPathPrefixes,

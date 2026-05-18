@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import type { FileHandle } from 'fs/promises';
 import { Logger } from './logger.js';
 
 // Action types a skill can perform. Git-level entries (file_*, branch_*,
@@ -35,7 +36,7 @@ interface AuditLog {
 }
 
 // Subset of fs.promises needed by AuditLogger — injectable for testing.
-type FileSystem = Pick<typeof fs.promises, 'writeFile' | 'appendFile'>;
+type FileSystem = Pick<typeof fs.promises, 'writeFile' | 'appendFile' | 'open'>;
 
 interface AuditLoggerOptions {
   auditLogPath?: string;
@@ -102,6 +103,7 @@ class AuditLogger {
     /github_pat_[a-zA-Z0-9_]{82}/,  // GitHub fine-grained PAT
     /\bsk-[a-zA-Z0-9]{32,}\b/,      // Anthropic / OpenAI-style API key (word-bounded to reduce false positives)
     /Bearer\s+\S{20,}/i,            // generic Bearer token
+    /\bAKIA[0-9A-Z]{16}\b/,         // AWS access key ID
   ];
 
   // Allowlist of detail keys permitted in audit entries. Fields outside this
@@ -190,7 +192,8 @@ class AuditLogger {
     revertInstructions?: string
   ): void {
     if (this.flushPromise !== undefined) {
-      this.logger.warn('Audit: record() called after flush() — entry may not be persisted if serialization has already completed');
+      this.logger.warn('Audit: record() called after flush() — entry dropped');
+      return;
     }
     if (this.auditData.entries.length >= AuditLogger.MAX_ENTRIES) {
       this.logger.warn(`Audit: entry limit (${AuditLogger.MAX_ENTRIES}) reached — entry dropped`);
@@ -209,12 +212,8 @@ class AuditLogger {
   // Uses realpathSync on the parent directory (which must exist for a write) to
   // detect symlinks pointing outside the expected location. Logs a warning on
   // every rejection so callers can see why a flush path was silently skipped.
-  // Residual TOCTOU risk: the symlink target could change between this check and
-  // the actual write in doFlush/doFlushStepSummary. Fully eliminating this requires
-  // opening the file with fsPromises.open() using O_NOFOLLOW | O_CREAT flags and
-  // writing to the resulting FileHandle — a larger refactor deferred given the
-  // trusted CI environment context. The prefix restriction plus AUDIT_FILE_MODE
-  // (0o600) provides adequate mitigation for the current use case.
+  // doFlush and doFlushStepSummary open files with O_NOFOLLOW, which atomically
+  // prevents symlink substitution at the OS level regardless of this check.
   private isSafePath(p: string): boolean {
     if (!path.isAbsolute(p) || path.resolve(p) !== p) {
       this.logger.warn('Audit: path rejected — not absolute or contains traversal components');
@@ -343,28 +342,44 @@ class AuditLogger {
   private async doFlush(): Promise<boolean> {
     const dest = this.auditLogPath;
     if (!dest || !this.isSafePath(dest)) return false;
+    let serialized: string;
     try {
-      await this.fileSystem.writeFile(
-        dest,
-        JSON.stringify(this.auditData, this.secretReplacer, 2),
-        { encoding: 'utf8', mode: AuditLogger.AUDIT_FILE_MODE }
-      );
+      serialized = JSON.stringify(this.auditData, this.secretReplacer, 2);
+    } catch (err) {
+      this.logger.error(`Audit log serialization failed: ${this.safeErr(err)}`);
+      return false;
+    }
+    // O_NOFOLLOW prevents symlink substitution between isSafePath() and the open call.
+    const flags = fs.constants.O_NOFOLLOW | fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC;
+    let handle: FileHandle | undefined;
+    try {
+      handle = await this.fileSystem.open(dest, flags, AuditLogger.AUDIT_FILE_MODE);
+      await handle.writeFile(serialized, { encoding: 'utf8' });
       return true;
     } catch (err) {
       this.logger.error(`Audit log flush failed — data loss: ${this.safeErr(err)}`);
       return false;
+    } finally {
+      try { await handle?.close(); } catch { /* ignore close errors — data already written */ }
     }
   }
 
   private async doFlushStepSummary(): Promise<boolean> {
     const dest = this.stepSummaryPath;
     if (!dest || !this.isSafePath(dest)) return false;
+    const content = '\n\n' + this.toMarkdown();
+    // O_NOFOLLOW prevents symlink substitution; O_APPEND ensures safe concurrent writes.
+    const flags = fs.constants.O_NOFOLLOW | fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_APPEND;
+    let handle: FileHandle | undefined;
     try {
-      await this.fileSystem.appendFile(dest, '\n\n' + this.toMarkdown(), { encoding: 'utf8', mode: AuditLogger.AUDIT_FILE_MODE });
+      handle = await this.fileSystem.open(dest, flags);
+      await handle.writeFile(content, { encoding: 'utf8' });
       return true;
     } catch (err) {
       this.logger.error(`Step summary flush failed: ${this.safeErr(err)}`);
       return false;
+    } finally {
+      try { await handle?.close(); } catch { /* ignore close errors */ }
     }
   }
 
