@@ -35,6 +35,7 @@ interface CodeIssue {
       /no\s+action\s+required/i,
       /no\s+action\s+needed/i,
       /no\s+issues?\s+(?:found|here)/i,
+      /not\s+(?:addressed|included|fixed)\s+in\s+this\s+(?:diff|pr|pull\s+request|change)/i,
     ];
 
     private static isNoOpIssue(issue: Partial<CodeIssue>): boolean {

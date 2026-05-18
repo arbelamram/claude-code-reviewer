@@ -1,6 +1,17 @@
 # Claude Code Reviewer Standards Configuration
 # Define coding standards and rules to enforce
 
+review_config:
+  # Files matching these patterns are excluded from code review.
+  # Supports exact names, prefix globs (CHANGELOG*), extension globs (**/*.md).
+  exclude_paths:
+    - "**/*.md"
+    - "LICENSE"
+    - "LICENSE*"
+    - ".env*"
+    - "*.example"
+    - "CHANGELOG*"
+
 security:
   enabled: true
   rules:

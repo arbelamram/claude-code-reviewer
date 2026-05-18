@@ -13,7 +13,12 @@ interface RuleCategory {
   rules: Record<string, Rule | boolean>;
 }
 
+interface ReviewConfig {
+  exclude_paths?: string[];
+}
+
 interface Standards {
+  review_config?: ReviewConfig;
   security: RuleCategory;
   performance: RuleCategory;
   style: RuleCategory;
@@ -42,6 +47,14 @@ class StandardsEngine {
       console.error('❌ Error loading standards:', error);
       throw error;
     }
+  }
+
+  /**
+   * Return paths/globs that should be excluded from code review.
+   * Supports exact names, prefix globs (CHANGELOG*), and extension globs (**\/*.md).
+   */
+  getExcludePaths(): string[] {
+    return this.standards?.review_config?.exclude_paths ?? [];
   }
 
   /**

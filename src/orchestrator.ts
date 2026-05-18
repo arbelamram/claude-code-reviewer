@@ -173,10 +173,17 @@ class CodeReviewOrchestrator {
     this.log.info(`✅ PR: "${safeTitle}" by @${safeAuthor}\n`);
 
     this.log.info('📝 Fetching code changes...');
-    const diffs = await this.githubService.getPRDiff(
+    const rawDiffs = await this.githubService.getPRDiff(
       options.owner, options.repo, options.prNumber
     );
-    this.log.info(`✅ Found ${diffs.length} files changed\n`);
+
+    const excludePatterns = this.standardsEngine.getExcludePaths();
+    const diffs = rawDiffs.filter(d => !excludePatterns.some(p => this.matchesExcludePattern(d.fileName, p)));
+    const skipped = rawDiffs.length - diffs.length;
+    if (skipped > 0) {
+      this.log.info(`⏭️  Skipped ${skipped} non-code file(s) (matched exclude_paths in standards.yaml)`);
+    }
+    this.log.info(`✅ Found ${diffs.length} code file(s) to review\n`);
 
     return { prContext, diffs };
   }
@@ -375,6 +382,25 @@ class CodeReviewOrchestrator {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  // Returns true if fileName matches the given exclude pattern.
+  // Supports: exact basename ("LICENSE"), prefix/suffix globs (".env*", "*.md"),
+  // and double-star extension globs ("**/*.md" — matches any depth).
+  private matchesExcludePattern(fileName: string, pattern: string): boolean {
+    const base = path.basename(fileName);
+    if (pattern.startsWith('**/')) {
+      return this.matchesSimpleGlob(base, pattern.slice(3));
+    }
+    return this.matchesSimpleGlob(base, pattern);
+  }
+
+  // Converts a simple glob (only * wildcards) to a regex and tests name against it.
+  private matchesSimpleGlob(name: string, pattern: string): boolean {
+    const regex = new RegExp(
+      '^' + pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
+    );
+    return regex.test(name);
+  }
 
   // Maps known error patterns to safe generic messages so that API keys,
   // internal paths, and stack traces are never surfaced in logs.
