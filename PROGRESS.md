@@ -16,6 +16,8 @@
 - ✅ feat/bot-identity — Switched to github.token; GH_TOKEN PAT eliminated
 - ✅ docs/readme-v1.3.0 — README updated: no PAT, rule count corrected, v1.3.0 features
 - ✅ fix/pending-initial-status — Initial commit status changed from failure → pending while review runs
+- ✅ docs/license-and-readme — LICENSE file added; README rewritten with badges, ToC, Design Decisions
+- ✅ fix/file-type-filtering — Non-code files excluded from review via configurable exclude_paths in standards.yaml; trySetCommitStatus helper extracted; PR comment posted when all files excluded
 
 ---
 
