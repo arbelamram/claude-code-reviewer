@@ -1,16 +1,24 @@
 import * as fs from 'fs';
 import * as yaml from 'js-yaml';
 
-interface Rule {
-  description: string;
-  severity: 'high' | 'medium' | 'low';
+// A single entry in a rules list. The rule name is whichever key has value `true`;
+// description, severity, enabled, and config are metadata keys.
+interface RuleEntry {
+  description?: string;
+  severity?: 'high' | 'medium' | 'low';
   enabled?: boolean;
   config?: Record<string, unknown>;
+  [ruleName: string]: unknown;
 }
 
 interface RuleCategory {
   enabled: boolean;
-  rules: Record<string, Rule | boolean>;
+  rules: RuleEntry[];
+}
+
+interface LanguageConfig {
+  enabled?: boolean;
+  specific_rules?: RuleEntry[];
 }
 
 interface ReviewConfig {
@@ -23,9 +31,12 @@ interface Standards {
   performance: RuleCategory;
   style: RuleCategory;
   best_practices: RuleCategory;
-  languages?: Record<string, unknown>;
+  languages?: Record<string, LanguageConfig>;
   global?: Record<string, unknown>;
 }
+
+// Keys that are rule metadata, not the rule name itself.
+const METADATA_KEYS = new Set(['description', 'severity', 'config', 'enabled']);
 
 class StandardsEngine {
   private standards: Standards | null = null;
@@ -35,9 +46,6 @@ class StandardsEngine {
     this.configPath = configPath;
   }
 
-  /**
-   * Load standards from YAML file
-   */
   loadStandards(): void {
     try {
       const fileContent = fs.readFileSync(this.configPath, 'utf-8');
@@ -58,9 +66,6 @@ class StandardsEngine {
     return [...(this.standards?.review_config?.exclude_paths ?? [])];
   }
 
-  /**
-   * Get currently loaded standards
-   */
   getStandards(): Standards {
     if (!this.standards) {
       throw new Error('Standards not loaded. Call loadStandards() first.');
@@ -68,9 +73,6 @@ class StandardsEngine {
     return this.standards;
   }
 
-  /**
-   * Get all enabled rules formatted as text
-   */
   getEnabledRulesAsText(): string {
     if (!this.standards) {
       throw new Error('Standards not loaded');
@@ -78,65 +80,34 @@ class StandardsEngine {
 
     const lines: string[] = [];
 
-    // Security rules
-    if (this.standards.security?.enabled) {
-      lines.push('## SECURITY RULES');
+    const appendCategory = (header: string, category: RuleCategory | undefined): void => {
+      if (!category?.enabled || !Array.isArray(category.rules)) return;
+      lines.push(`## ${header}`);
       lines.push('');
-      const rules = this.standards.security.rules;
-      for (const [ruleName, ruleData] of Object.entries(rules)) {
-        if (typeof ruleData === 'object' && ruleData !== null) {
-          const rule = ruleData as Rule;
-          lines.push(`- ${ruleName}`);
-          lines.push(`  Description: ${rule.description}`);
-          lines.push(`  Severity: ${rule.severity}`);
-          lines.push('');
-        }
+      for (const entry of category.rules) {
+        if (!entry.description || !entry.severity) continue;
+        lines.push(`- ${StandardsEngine.getRuleName(entry)}`);
+        lines.push(`  Description: ${entry.description}`);
+        lines.push(`  Severity: ${entry.severity}`);
+        lines.push('');
       }
-    }
+    };
 
-    // Performance rules
-    if (this.standards.performance?.enabled) {
-      lines.push('## PERFORMANCE RULES');
-      lines.push('');
-      const rules = this.standards.performance.rules;
-      for (const [ruleName, ruleData] of Object.entries(rules)) {
-        if (typeof ruleData === 'object' && ruleData !== null) {
-          const rule = ruleData as Rule;
-          lines.push(`- ${ruleName}`);
-          lines.push(`  Description: ${rule.description}`);
-          lines.push(`  Severity: ${rule.severity}`);
-          lines.push('');
-        }
-      }
-    }
+    appendCategory('SECURITY RULES',  this.standards.security);
+    appendCategory('PERFORMANCE RULES', this.standards.performance);
+    appendCategory('STYLE RULES',      this.standards.style);
+    appendCategory('BEST PRACTICES',   this.standards.best_practices);
 
-    // Style rules
-    if (this.standards.style?.enabled) {
-      lines.push('## STYLE RULES');
-      lines.push('');
-      const rules = this.standards.style.rules;
-      for (const [ruleName, ruleData] of Object.entries(rules)) {
-        if (typeof ruleData === 'object' && ruleData !== null) {
-          const rule = ruleData as Rule;
-          lines.push(`- ${ruleName}`);
-          lines.push(`  Description: ${rule.description}`);
-          lines.push(`  Severity: ${rule.severity}`);
-          lines.push('');
-        }
-      }
-    }
-
-    // Best practices
-    if (this.standards.best_practices?.enabled) {
-      lines.push('## BEST PRACTICES');
-      lines.push('');
-      const rules = this.standards.best_practices.rules;
-      for (const [ruleName, ruleData] of Object.entries(rules)) {
-        if (typeof ruleData === 'object' && ruleData !== null) {
-          const rule = ruleData as Rule;
-          lines.push(`- ${ruleName}`);
-          lines.push(`  Description: ${rule.description}`);
-          lines.push(`  Severity: ${rule.severity}`);
+    if (this.standards.languages) {
+      for (const [lang, config] of Object.entries(this.standards.languages)) {
+        if (!config.enabled || !Array.isArray(config.specific_rules)) continue;
+        lines.push(`## ${lang.toUpperCase()} RULES`);
+        lines.push('');
+        for (const entry of config.specific_rules) {
+          if (!entry.description || !entry.severity) continue;
+          lines.push(`- ${StandardsEngine.getRuleName(entry)}`);
+          lines.push(`  Description: ${entry.description}`);
+          lines.push(`  Severity: ${entry.severity}`);
           lines.push('');
         }
       }
@@ -145,9 +116,6 @@ class StandardsEngine {
     return lines.join('\n');
   }
 
-  /**
-   * Build the prompt for Claude
-   */
   buildPrompt(codeToReview: string, language: string = 'javascript'): string {
     if (!this.standards) {
       throw new Error('Standards not loaded');
@@ -192,9 +160,6 @@ IMPORTANT:
 Return ONLY valid JSON, no other text.`;
   }
 
-  /**
-   * Count total number of enabled rules
-   */
   countEnabledRules(): number {
     if (!this.standards) {
       throw new Error('Standards not loaded');
@@ -202,28 +167,33 @@ Return ONLY valid JSON, no other text.`;
 
     let count = 0;
 
-    const categories = [
+    for (const category of [
       this.standards.security,
       this.standards.performance,
       this.standards.style,
       this.standards.best_practices,
-    ];
+    ]) {
+      if (category?.enabled && Array.isArray(category.rules)) {
+        count += category.rules.filter(r => r.description && r.severity).length;
+      }
+    }
 
-    for (const category of categories) {
-      if (category?.enabled) {
-        for (const rule of Object.values(category.rules)) {
-          if (typeof rule === 'object' && rule !== null) {
-            const r = rule as Rule;
-            if (r.enabled !== false) {
-              count++;
-            }
-          }
+    if (this.standards.languages) {
+      for (const config of Object.values(this.standards.languages)) {
+        if (config.enabled && Array.isArray(config.specific_rules)) {
+          count += config.specific_rules.filter(r => r.description && r.severity).length;
         }
       }
     }
 
     return count;
   }
+
+  // Extracts the rule name from a rule entry — the key whose value is `true`
+  // (i.e., not a metadata key like description, severity, config, or enabled).
+  private static getRuleName(entry: RuleEntry): string {
+    return Object.keys(entry).find(k => !METADATA_KEYS.has(k)) ?? 'unknown';
+  }
 }
 
-export { StandardsEngine, Standards, Rule, RuleCategory };
+export { StandardsEngine, Standards, RuleEntry, RuleCategory, LanguageConfig };
