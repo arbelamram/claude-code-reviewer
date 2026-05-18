@@ -27,6 +27,21 @@ interface CodeIssue {
   }
 
   class AnalysisFormatter {
+    // Phrases that indicate Claude filled the issues array with a positive
+    // observation rather than an actual finding. Matched against suggestion only
+    // (the most reliable signal) without the g flag — .test() is stateless.
+    private static readonly NO_OP_PATTERNS: RegExp[] = [
+      /no\s+change\s+needed/i,
+      /no\s+action\s+required/i,
+      /no\s+action\s+needed/i,
+      /no\s+issues?\s+(?:found|here)/i,
+    ];
+
+    private static isNoOpIssue(issue: Partial<CodeIssue>): boolean {
+      const suggestion = issue.suggestion ?? '';
+      return AnalysisFormatter.NO_OP_PATTERNS.some(p => p.test(suggestion));
+    }
+
     /**
      * Validate analysis result has required fields and correct types
      */
@@ -86,23 +101,32 @@ interface CodeIssue {
           throw new Error('No JSON found in response');
         }
 
-        const result = JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
 
         // Validate against schema
-        const validation = this.validateSchema(result);
+        const validation = this.validateSchema(parsed);
         if (!validation.valid) {
           const errorMessages = validation.errors?.join('\n') || 'Unknown error';
           console.warn('⚠️ Claude response validation warnings:');
           validation.errors?.forEach(err => console.warn(`   ${err}`));
 
-          if (!result.summary || !result.overallQuality || !Array.isArray(result.issues)) {
+          if (!parsed.summary || !parsed.overallQuality || !Array.isArray(parsed.issues)) {
             throw new Error(`Schema validation failed (missing required fields):\n${errorMessages}`);
           }
         } else {
           console.log('✅ Claude response validated against schema');
         }
 
-        return result as AnalysisResult;
+        // Drop placeholder entries where Claude had nothing to flag but filled
+        // the array anyway with a positive observation and a no-op suggestion.
+        const result: AnalysisResult = {
+          ...parsed,
+          issues: Array.isArray(parsed.issues)
+            ? parsed.issues.filter((issue: Partial<CodeIssue>) => !AnalysisFormatter.isNoOpIssue(issue))
+            : parsed.issues,
+        };
+
+        return result;
       } catch (error) {
         console.error('❌ Failed to parse analysis:', error);
         throw new Error(`Invalid JSON response: ${error}`);
