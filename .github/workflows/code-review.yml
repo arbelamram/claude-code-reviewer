@@ -68,5 +68,5 @@ jobs:
           GITHUB_REPO: ${{ inputs.repo || github.event.repository.name }}
           PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: npm run review
