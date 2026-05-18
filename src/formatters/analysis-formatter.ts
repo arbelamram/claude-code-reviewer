@@ -101,7 +101,7 @@ interface CodeIssue {
           throw new Error('No JSON found in response');
         }
 
-        const result = JSON.parse(jsonMatch[0]);
+        let result = JSON.parse(jsonMatch[0]);
 
         // Validate against schema
         const validation = this.validateSchema(result);
@@ -119,14 +119,14 @@ interface CodeIssue {
 
         // Drop placeholder entries where Claude had nothing to flag but filled
         // the array anyway with a positive observation and a no-op suggestion.
+        // Spread to avoid mutating the parsed object in case callers cache it.
         if (Array.isArray(result.issues)) {
-          const before = result.issues.length;
-          result.issues = result.issues.filter(
-            (issue: { suggestion?: string }) => !AnalysisFormatter.isNoOpIssue(issue)
-          );
-          if (result.issues.length < before) {
-            console.log(`ℹ️  Filtered ${before - result.issues.length} no-op issue(s) from response`);
-          }
+          result = {
+            ...result,
+            issues: result.issues.filter(
+              (issue: { suggestion?: string }) => !AnalysisFormatter.isNoOpIssue(issue)
+            ),
+          };
         }
 
         return result as AnalysisResult;
