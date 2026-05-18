@@ -8,13 +8,13 @@ jobs:
   unblock-pr:
     # Run only for issues that match all three criteria:
     # 1. Carry the 'code-review' label applied by the skill
-    # 2. Were created by the repository owner (GH_TOKEN PAT owner)
+    # 2. Were created by github-actions[bot] (using the built-in github.token)
     # 3. Contain the skill's auto-generated body marker
     # Combining all three prevents spurious triggers from unrelated issues
-    # that happen to carry the label or were closed by the repo owner.
+    # that happen to carry the label or were closed by an unrelated actor.
     if: |
       contains(github.event.issue.labels.*.name, 'code-review') &&
-      github.event.issue.user.login == github.repository_owner &&
+      github.event.issue.user.login == 'github-actions[bot]' &&
       contains(github.event.issue.body, 'Auto-generated from code review on PR #')
     runs-on: ubuntu-latest
 
