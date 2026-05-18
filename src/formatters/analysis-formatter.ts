@@ -101,16 +101,16 @@ interface CodeIssue {
           throw new Error('No JSON found in response');
         }
 
-        let result = JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
 
         // Validate against schema
-        const validation = this.validateSchema(result);
+        const validation = this.validateSchema(parsed);
         if (!validation.valid) {
           const errorMessages = validation.errors?.join('\n') || 'Unknown error';
           console.warn('⚠️ Claude response validation warnings:');
           validation.errors?.forEach(err => console.warn(`   ${err}`));
 
-          if (!result.summary || !result.overallQuality || !Array.isArray(result.issues)) {
+          if (!parsed.summary || !parsed.overallQuality || !Array.isArray(parsed.issues)) {
             throw new Error(`Schema validation failed (missing required fields):\n${errorMessages}`);
           }
         } else {
@@ -119,18 +119,14 @@ interface CodeIssue {
 
         // Drop placeholder entries where Claude had nothing to flag but filled
         // the array anyway with a positive observation and a no-op suggestion.
-        // Spread rather than mutate: JSON.parse returns a fresh object, but
-        // keeping this non-mutating makes the intent explicit and safe to refactor.
-        if (Array.isArray(result.issues)) {
-          result = {
-            ...result,
-            issues: result.issues.filter(
-              (issue: Partial<CodeIssue>) => !AnalysisFormatter.isNoOpIssue(issue)
-            ),
-          };
-        }
+        const result: AnalysisResult = {
+          ...parsed,
+          issues: Array.isArray(parsed.issues)
+            ? parsed.issues.filter((issue: Partial<CodeIssue>) => !AnalysisFormatter.isNoOpIssue(issue))
+            : parsed.issues,
+        };
 
-        return result as AnalysisResult;
+        return result;
       } catch (error) {
         console.error('❌ Failed to parse analysis:', error);
         throw new Error(`Invalid JSON response: ${error}`);
