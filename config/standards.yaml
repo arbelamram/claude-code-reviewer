@@ -13,6 +13,7 @@ review_config:
     - "CHANGELOG*"
     - "package-lock.json"
     - "yarn.lock"
+    - "pnpm-lock.yaml"
     - "**/*.png"
     - "**/*.jpg"
     - "**/*.jpeg"

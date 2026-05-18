@@ -403,6 +403,7 @@ class CodeReviewOrchestrator {
 
   // Converts a * -only glob pattern to a RegExp. Special regex chars are escaped
   // first so that dots, question marks, etc. in pattern literals are treated literally.
+  // Patterns MUST come from trusted config (standards.yaml) — never from user input.
   private globToRegex(pattern: string): RegExp {
     return new RegExp(
       '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'

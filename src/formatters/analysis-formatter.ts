@@ -27,9 +27,11 @@ interface CodeIssue {
   }
 
   class AnalysisFormatter {
-    // Phrases that indicate Claude filled the issues array with a positive
-    // observation rather than an actual finding. Matched against suggestion only
-    // (the most reliable signal) without the g flag — .test() is stateless.
+    // Phrases that indicate the suggestion is a no-op and the issue should be dropped.
+    // Covers two false-positive classes:
+    //   1. Claude filled the issues array with a positive observation (no actual finding).
+    //   2. Claude flagged something documented in the PR but not changed in this diff.
+    // Matched against suggestion only (the most reliable signal); no g flag — .test() is stateless.
     private static readonly NO_OP_PATTERNS: RegExp[] = [
       /no\s+change\s+needed/i,
       /no\s+action\s+required/i,
