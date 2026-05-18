@@ -27,6 +27,21 @@ interface CodeIssue {
   }
 
   class AnalysisFormatter {
+    // Phrases that indicate Claude filled the issues array with a positive
+    // observation rather than an actual finding. Matched against suggestion only
+    // (the most reliable signal) without the g flag — .test() is stateless.
+    private static readonly NO_OP_PATTERNS: RegExp[] = [
+      /no\s+change\s+needed/i,
+      /no\s+action\s+required/i,
+      /no\s+action\s+needed/i,
+      /no\s+issues?\s+(?:found|here)/i,
+    ];
+
+    private static isNoOpIssue(issue: { suggestion?: string }): boolean {
+      const suggestion = issue.suggestion ?? '';
+      return AnalysisFormatter.NO_OP_PATTERNS.some(p => p.test(suggestion));
+    }
+
     /**
      * Validate analysis result has required fields and correct types
      */
@@ -100,6 +115,18 @@ interface CodeIssue {
           }
         } else {
           console.log('✅ Claude response validated against schema');
+        }
+
+        // Drop placeholder entries where Claude had nothing to flag but filled
+        // the array anyway with a positive observation and a no-op suggestion.
+        if (Array.isArray(result.issues)) {
+          const before = result.issues.length;
+          result.issues = result.issues.filter(
+            (issue: { suggestion?: string }) => !AnalysisFormatter.isNoOpIssue(issue)
+          );
+          if (result.issues.length < before) {
+            console.log(`ℹ️  Filtered ${before - result.issues.length} no-op issue(s) from response`);
+          }
         }
 
         return result as AnalysisResult;
