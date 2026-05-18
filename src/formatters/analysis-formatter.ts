@@ -37,7 +37,7 @@ interface CodeIssue {
       /no\s+issues?\s+(?:found|here)/i,
     ];
 
-    private static isNoOpIssue(issue: { suggestion?: string }): boolean {
+    private static isNoOpIssue(issue: Partial<CodeIssue>): boolean {
       const suggestion = issue.suggestion ?? '';
       return AnalysisFormatter.NO_OP_PATTERNS.some(p => p.test(suggestion));
     }
@@ -119,12 +119,13 @@ interface CodeIssue {
 
         // Drop placeholder entries where Claude had nothing to flag but filled
         // the array anyway with a positive observation and a no-op suggestion.
-        // Spread to avoid mutating the parsed object in case callers cache it.
+        // Spread rather than mutate: JSON.parse returns a fresh object, but
+        // keeping this non-mutating makes the intent explicit and safe to refactor.
         if (Array.isArray(result.issues)) {
           result = {
             ...result,
             issues: result.issues.filter(
-              (issue: { suggestion?: string }) => !AnalysisFormatter.isNoOpIssue(issue)
+              (issue: Partial<CodeIssue>) => !AnalysisFormatter.isNoOpIssue(issue)
             ),
           };
         }
