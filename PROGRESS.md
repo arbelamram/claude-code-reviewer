@@ -310,6 +310,12 @@ All changes tested and verified:
 - ✅ Corrected all file paths in PROGRESS.md to reflect post-refactor structure
 - ✅ Updated README.md and PROGRESS.md dates
 
+### Workflow Correctness Fixes (May 2026)
+- ✅ **fix/disable-issue-creation** — Gate issue creation behind `ENABLE_ISSUE_CREATION` env var; prevents spurious issues during testing
+- ✅ **fix/resolve-check-condition** (PR #143, SHA `721bb88`) — Triple gate on `resolve-check.yml`: label + `github.repository_owner` identity + body marker; fixes workflow never firing when issues created via PAT
+- ✅ **docs/post-merge-workflow** (PR #144, SHA `e997ea6`) — Added post-merge tracking rule to CLAUDE.md
+- ✅ **fix/false-positive-issues** (PR #145, SHA `aa5ab23`) — Two-layer suppression of no-op AI responses: prompt instruction in `buildPrompt()` (primary) + `isNoOpIssue()` post-parse filter in `AnalysisFormatter` (safety net); eliminates positive observations appearing as LOW severity issues in review output
+
 ---
 
 ## ⏳ FUTURE ENHANCEMENTS (Optional)
@@ -337,6 +343,14 @@ All changes tested and verified:
 - [ ] Slack/Email notifications
 - [ ] Custom rule templates
 - [ ] Multi-language support expansion
+
+### Reliability & UX (Active Queue)
+- ✅ **fix/commit-status-annotation** (PR #146, SHA `0f1787d`) — emit `::error::` GitHub Actions annotation when any of the 3 commit status `setCommitStatus` calls in `orchestrator.ts` fail silently. PR stays stuck on "Code review in progress…" with no visible signal to the developer.
+- ✅ **fix/issue-location** (PR #147, SHA `7d12ed8`) — show `📍 Location` for medium and low severity issues in PR comment (was high only); tightened `buildPrompt()` location instruction from suggestion to requirement.
+- ✅ **feat/bot-identity** (PR #148, SHA `e0e7efc`) — switched `code-review.yml` from `secrets.GH_TOKEN` to `github.token`; updated `resolve-check.yml` identity check to `github-actions[bot]`. `GH_TOKEN` PAT secret can now be deleted from repo settings.
+
+### Security Maintenance
+- [ ] **ops/token-rotation** — do after `feat/bot-identity`: revoke the `GH_TOKEN` PAT (no longer needed), rotate `CLAUDE_API_KEY` in Anthropic console and update repo secret. Manual only.
 
 ---
 

@@ -3,7 +3,7 @@
 An AI-powered code review tool that automatically analyzes GitHub pull requests using Claude and configurable coding standards.
 
 **Status:** Production-Ready  
-**Version:** 1.2.0  
+**Version:** 1.3.0  
 **License:** ISC
 
 ---
@@ -21,6 +21,12 @@ An AI-powered code review tool that automatically analyzes GitHub pull requests 
 - **GitHub Issue Creation** — Auto-creates a tracked GitHub issue for every high/medium severity finding, labelled by priority
 - **Merge Blocking** — Merge button is disabled the moment a PR opens; enabled only after a clean review pass
 - **Auto-Unblock** — `resolve-check.yml` watches for issue closures and re-enables merging once all problems are resolved
+
+### Quality & Security (v1.3.0)
+- **No PAT required** — Uses the built-in `github.token` (auto-scoped per run); only `CLAUDE_API_KEY` needs to be added as a secret
+- **False-positive filtering** — Prompt instruction + post-parse filter prevent positive observations appearing as issues
+- **Issue location for all severities** — `📍 Location` shown for high, medium, and low findings; Claude required to always populate the field
+- **Visible status failures** — `::error::` annotation emitted if commit status update fails, so PRs never stay silently stuck
 
 ### Reliability (v1.1.0)
 - **Automatic Retries** — Exponential backoff for transient API failures (3 attempts)
@@ -45,7 +51,7 @@ PR opened / new commit pushed
        ├─ 3. Annotate each diff line with its actual file line number
        │      so Claude reports the exact offending statement
        │
-       ├─ 4. Build analysis prompt (code + 21 standards rules)
+       ├─ 4. Build analysis prompt (code + 43 standards rules)
        │
        ├─ 5. Send to Claude Opus 4.6
        │
@@ -88,8 +94,9 @@ Go to your repo → **Settings → Secrets and variables → Actions** and add:
 
 | Secret | Value |
 |--------|-------|
-| `GH_TOKEN` | GitHub personal access token (scopes: `repo`, `read:user`) |
 | `CLAUDE_API_KEY` | Anthropic API key (`sk-ant-...`) |
+
+> GitHub API access uses the built-in `github.token` — no personal access token required.
 
 ### 3. Configure branch protection
 
@@ -138,7 +145,7 @@ Edit `config/standards.yaml` to enable/disable rules or adjust severity levels.
     code-review.yml       # Main review workflow (runs on every PR)
     resolve-check.yml     # Unblocks PR when all issues are resolved
 config/
-  standards.yaml          # 21 coding standards rules
+  standards.yaml          # 43 coding standards rules
 src/
   formatters/
     analysis-formatter.ts # Parses Claude response → GitHub comments
@@ -176,7 +183,7 @@ Modern idioms, design patterns, testability, console logs in production, error m
 The workflows fetch the reviewer source code from this public repo at runtime — no source files need to be copied.
 
 1. Copy `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo's `.github/workflows/`
-2. Add `GH_TOKEN` and `CLAUDE_API_KEY` as repository secrets
+2. Add `CLAUDE_API_KEY` as a repository secret (no PAT needed — uses `github.token`)
 3. Set up branch protection with `code-review/issues` as a required status check
 4. Open a PR — the review runs automatically
 
@@ -185,8 +192,6 @@ To use custom coding standards, fork this repo, update `config/standards.yaml`, 
 ---
 
 ## Troubleshooting
-
-**"GitHub token is invalid"** — Check token scopes (`repo`, `read:user`) and expiry.
 
 **"Claude API error: credit balance too low"** — Add credits at console.anthropic.com.
 
@@ -206,4 +211,4 @@ To use custom coding standards, fork this repo, update `config/standards.yaml`, 
 
 ---
 
-**Last Updated:** May 13, 2026 | **Version:** 1.2.0
+**Last Updated:** May 18, 2026 | **Version:** 1.3.0
