@@ -254,6 +254,7 @@ class CodeReviewOrchestrator {
       }
     } catch (err: unknown) {
       this.log.warn(`⚠️  Commit status update failed: ${this.safeErrorMessage(err)}`);
+      process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
     }
   }
 
@@ -280,6 +281,7 @@ class CodeReviewOrchestrator {
         );
       } catch (err: unknown) {
         this.log.warn(`⚠️  Status update failed (review still passed): ${this.safeErrorMessage(err)}`);
+        process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
       }
       return 0;
     }
@@ -313,6 +315,7 @@ class CodeReviewOrchestrator {
         );
       } catch (err: unknown) {
         this.log.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
+        process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
       }
     }
 
