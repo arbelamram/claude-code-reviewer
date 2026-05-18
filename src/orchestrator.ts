@@ -178,7 +178,8 @@ class CodeReviewOrchestrator {
     );
 
     const excludePatterns = this.standardsEngine.getExcludePaths();
-    const diffs = rawDiffs.filter(d => !excludePatterns.some(p => this.matchesExcludePattern(d.fileName, p)));
+    const compiledExcludes = this.compileExcludePatterns(excludePatterns);
+    const diffs = rawDiffs.filter(d => !this.isExcluded(d.fileName, compiledExcludes));
     const skipped = rawDiffs.length - diffs.length;
     if (skipped > 0) {
       this.log.info(`⏭️  Skipped ${skipped} non-code file(s) (matched exclude_paths in standards.yaml)`);
@@ -383,27 +384,38 @@ class CodeReviewOrchestrator {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  // Returns true if fileName matches the given exclude pattern.
-  // Supports: exact basename ("LICENSE"), prefix/suffix globs (".env*", "*.md"),
-  // double-star extension globs ("**/*.md" — matches any depth),
-  // and path-relative patterns ("config/secrets.yaml" — matched against full path).
-  private matchesExcludePattern(fileName: string, pattern: string): boolean {
-    if (pattern.startsWith('**/')) {
-      return this.matchesSimpleGlob(path.basename(fileName), pattern.slice(3));
-    }
-    if (pattern.includes('/')) {
-      // Match against the full forward-slash-normalised path
-      return this.matchesSimpleGlob(fileName.replace(/\\/g, '/'), pattern);
-    }
-    return this.matchesSimpleGlob(path.basename(fileName), pattern);
+  // Compiles raw glob patterns to RegExp objects once so they are not rebuilt
+  // per file during filtering. Only * wildcards are supported — for ?, character
+  // classes, or negation use a dedicated library (minimatch, picomatch).
+  private compileExcludePatterns(
+    patterns: string[]
+  ): Array<{ regex: RegExp; useFullPath: boolean }> {
+    return patterns.map(p => {
+      if (p.startsWith('**/')) {
+        return { regex: this.globToRegex(p.slice(3)), useFullPath: false };
+      }
+      if (p.includes('/')) {
+        return { regex: this.globToRegex(p), useFullPath: true };
+      }
+      return { regex: this.globToRegex(p), useFullPath: false };
+    });
   }
 
-  // Converts a simple glob (only * wildcards) to a regex and tests name against it.
-  private matchesSimpleGlob(name: string, pattern: string): boolean {
-    const regex = new RegExp(
+  // Converts a * -only glob pattern to a RegExp. Special regex chars are escaped
+  // first so that dots, question marks, etc. in pattern literals are treated literally.
+  private globToRegex(pattern: string): RegExp {
+    return new RegExp(
       '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
     );
-    return regex.test(name);
+  }
+
+  private isExcluded(
+    fileName: string,
+    compiled: Array<{ regex: RegExp; useFullPath: boolean }>
+  ): boolean {
+    const base = path.basename(fileName);
+    const full = fileName.replace(/\\/g, '/');
+    return compiled.some(({ regex, useFullPath }) => regex.test(useFullPath ? full : base));
   }
 
   // Maps known error patterns to safe generic messages so that API keys,

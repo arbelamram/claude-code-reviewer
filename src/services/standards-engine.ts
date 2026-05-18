@@ -55,7 +55,7 @@ class StandardsEngine {
    * double-star extension globs (see standards.yaml review_config.exclude_paths).
    */
   getExcludePaths(): string[] {
-    return this.standards?.review_config?.exclude_paths ?? [];
+    return [...(this.standards?.review_config?.exclude_paths ?? [])];
   }
 
   /**
