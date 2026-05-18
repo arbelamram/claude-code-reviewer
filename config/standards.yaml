@@ -6,7 +6,6 @@ review_config:
   # Supports exact names, prefix globs (CHANGELOG*), extension globs (**/*.md).
   exclude_paths:
     - "**/*.md"
-    - "LICENSE"
     - "LICENSE*"
     - ".env*"
     - "*.example"

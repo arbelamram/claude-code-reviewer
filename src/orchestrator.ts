@@ -63,7 +63,7 @@ class CodeReviewOrchestrator {
   private readonly claudeService: ClaudeService;
   private readonly config: OrchestratorConfig;
   private readonly log: Logger;
-  private compiledExcludes: Array<{ regex: RegExp; useFullPath: boolean }> | null = null;
+  private readonly compiledExcludes: Array<{ regex: RegExp; useFullPath: boolean }>;
 
   private static readonly SEVERITY_LABEL: Record<string, string> = {
     high:   'priority: high',
@@ -110,7 +110,8 @@ class CodeReviewOrchestrator {
       this.githubService = new GitHubService(githubToken);
     }
 
-    this.claudeService = services.claudeService ?? new ClaudeService(claudeApiKey);
+    this.claudeService    = services.claudeService ?? new ClaudeService(claudeApiKey);
+    this.compiledExcludes = this.compileExcludePatterns(this.standardsEngine.getExcludePaths());
   }
 
   // ── Main workflow ──────────────────────────────────────────────────────────
@@ -126,16 +127,11 @@ class CodeReviewOrchestrator {
 
       if (diffs.length === 0) {
         this.log.info('⏭️  All changed files are in excluded paths — skipping Claude analysis');
-        try {
-          await this.githubService.setCommitStatus(
-            options.owner, options.repo, prContext.headSha,
-            CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
-            'No reviewable code files changed'
-          );
-        } catch (err: unknown) {
-          this.log.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
-          process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
-        }
+        await this.trySetCommitStatus(
+          options.owner, options.repo, prContext.headSha,
+          CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
+          'No reviewable code files changed'
+        );
         return;
       }
 
@@ -194,10 +190,7 @@ class CodeReviewOrchestrator {
       options.owner, options.repo, options.prNumber
     );
 
-    if (!this.compiledExcludes) {
-      this.compiledExcludes = this.compileExcludePatterns(this.standardsEngine.getExcludePaths());
-    }
-    const diffs = rawDiffs.filter(d => !this.isExcluded(d.fileName, this.compiledExcludes!));
+    const diffs = rawDiffs.filter(d => !this.isExcluded(d.fileName, this.compiledExcludes));
     const skipped = rawDiffs.length - diffs.length;
     if (skipped > 0) {
       this.log.info(`⏭️  Skipped ${skipped} non-code file(s) (matched exclude_paths in standards.yaml)`);
@@ -264,23 +257,18 @@ class CodeReviewOrchestrator {
     analysis: AnalysisResult
   ): Promise<void> {
     const blocking = analysis.issues.filter(i => i.severity === 'high' || i.severity === 'medium');
-    try {
-      if (blocking.length > 0) {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.FAILURE,
-          `${blocking.length} issue(s) found — push fixes to re-run review`
-        );
-      } else {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
-          'No blocking code review issues found'
-        );
-      }
-    } catch (err: unknown) {
-      this.log.warn(`⚠️  Commit status update failed: ${this.safeErrorMessage(err)}`);
-      process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
+    if (blocking.length > 0) {
+      await this.trySetCommitStatus(
+        owner, repo, headSha,
+        CodeReviewOrchestrator.COMMIT_STATE.FAILURE,
+        `${blocking.length} issue(s) found — push fixes to re-run review`
+      );
+    } else {
+      await this.trySetCommitStatus(
+        owner, repo, headSha,
+        CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
+        'No blocking code review issues found'
+      );
     }
   }
 
@@ -299,16 +287,11 @@ class CodeReviewOrchestrator {
 
     if (actionable.length === 0) {
       this.log.info('ℹ️  No high/medium issues — setting commit status to success');
-      try {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
-          'No blocking code review issues found'
-        );
-      } catch (err: unknown) {
-        this.log.warn(`⚠️  Status update failed (review still passed): ${this.safeErrorMessage(err)}`);
-        process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
-      }
+      await this.trySetCommitStatus(
+        owner, repo, headSha,
+        CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
+        'No blocking code review issues found'
+      );
       return 0;
     }
 
@@ -333,16 +316,11 @@ class CodeReviewOrchestrator {
     }
 
     if (created > 0) {
-      try {
-        await this.githubService.setCommitStatus(
-          owner, repo, headSha,
-          CodeReviewOrchestrator.COMMIT_STATE.FAILURE,
-          `${created} code review issue(s) must be resolved before merging`
-        );
-      } catch (err: unknown) {
-        this.log.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
-        process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
-      }
+      await this.trySetCommitStatus(
+        owner, repo, headSha,
+        CodeReviewOrchestrator.COMMIT_STATE.FAILURE,
+        `${created} code review issue(s) must be resolved before merging`
+      );
     }
 
     return created;
@@ -402,6 +380,23 @@ class CodeReviewOrchestrator {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
+  // Calls setCommitStatus and emits a ::error:: annotation if it fails so the
+  // GitHub Actions UI surfaces the failure even if the workflow step succeeds.
+  private async trySetCommitStatus(
+    owner: string,
+    repo: string,
+    sha: string,
+    state: 'pending' | 'success' | 'failure' | 'error',
+    description: string
+  ): Promise<void> {
+    try {
+      await this.githubService.setCommitStatus(owner, repo, sha, state, description);
+    } catch (err: unknown) {
+      this.log.warn(`⚠️  Commit status update failed: ${this.safeErrorMessage(err)}`);
+      process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
+    }
+  }
+
   // Compiles raw glob patterns to RegExp objects once so they are not rebuilt
   // per file during filtering. Only * wildcards are supported — for ?, character
   // classes, or negation use a dedicated library (minimatch, picomatch).
@@ -419,14 +414,17 @@ class CodeReviewOrchestrator {
     });
   }
 
-  // Converts a * -only glob pattern to a RegExp. Special regex chars are escaped
-  // first so that dots, question marks, etc. in pattern literals are treated literally.
+  // Converts a glob pattern to a RegExp. Special regex chars are escaped first,
+  // then ** is replaced with .* (any path depth) and * with .* (any segment).
   // Patterns MUST come from trusted config (standards.yaml) — never from user input.
   private globToRegex(pattern: string): RegExp {
     try {
-      return new RegExp(
-        '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
-      );
+      const re = pattern
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // escape regex metacharacters
+        .replace(/\*\*/g, '\x00')               // placeholder: ** → match any depth
+        .replace(/\*/g, '.*')                   // single * → match within segment
+        .replace(/\x00/g, '.*');                // restore ** placeholder as .*
+      return new RegExp('^' + re + '$');
     } catch {
       this.log.warn(`⚠️  Exclude pattern "${pattern}" is invalid and will be skipped`);
       return /(?!)/; // never matches

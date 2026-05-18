@@ -36,7 +36,7 @@
 
 - [ ] **fix/job-timeout** — `npm run review` step in `code-review.yml` has no `timeout-minutes`. A hung Claude API call runs for GitHub's 6-hour default. Fix: add `timeout-minutes: 10` to the run step.
 - [ ] **fix/anthropic-api-version** — `claude-service.ts` hardcodes `anthropic-version: '2023-06-01'` (outdated). Update to current version. File: `src/services/claude-service.ts` line 76.
-- [ ] **fix/version-sync** — `package.json` says `"version": "1.0.0"` but README/PROGRESS say `1.3.0`. Sync across all files.
+- [x] **fix/version-sync** — `package.json` version synced to `1.3.0`; description, author, keywords, license all updated.
 - [ ] **fix/inline-comment-batching** — `github-service.ts` posts each inline comment as a separate API call. GitHub's review API accepts all comments in one call. Fix reduces latency and rate limit exposure. File: `src/services/github/github-service.ts` lines 148–164.
 - [ ] **fix/status-context-constant** — The string `'code-review/issues'` is hardcoded independently in `github-service.ts`, `orchestrator.ts`, `code-review.yml`, and `resolve-check.yml`. Extract to shared constant. One drift breaks the entire flow.
 
