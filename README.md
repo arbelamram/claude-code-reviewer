@@ -1,39 +1,103 @@
 # Claude Code Reviewer
 
-An AI-powered code review tool that automatically analyzes GitHub pull requests using Claude and configurable coding standards.
+![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)
+![Node.js](https://img.shields.io/badge/Node.js-22%2B-brightgreen.svg)
+![Claude API](https://img.shields.io/badge/Claude-Opus%204.6-blueviolet.svg)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-Workflow-black.svg)
+![License](https://img.shields.io/badge/license-Source%20Available-red.svg)
 
-**Status:** Production-Ready  
-**Version:** 1.3.0  
-**License:** ISC
+An AI-powered code review tool that runs as a GitHub Action. On every pull request, it analyzes the diff against configurable coding standards, posts inline comments on the exact offending lines, creates tracked GitHub issues for each finding, and blocks the merge button until every issue is resolved.
 
 ---
 
-## Features
+## Table of Contents
 
-### Core Review
-- **Automatic PR Reviews** — Triggered on every pull request or manually via `workflow_dispatch`
-- **Configurable Standards** — Define your team's coding standards in YAML (43 built-in rules)
-- **Intelligent Analysis** — Uses Claude Opus 4.6 to understand code intent, not just patterns
-- **Inline Comments** — Posts feedback directly on the exact offending line in the diff
-- **Summary Comment** — Full analysis overview posted as a PR comment
+1. [Architecture Overview](#architecture-overview)
+   - [Project Structure](#project-structure)
+2. [How It Works](#how-it-works)
+3. [Design Decisions](#design-decisions)
+4. [Features](#features)
+5. [What It Reviews](#what-it-reviews)
+6. [Getting Started](#getting-started)
+   - [Prerequisites](#prerequisites)
+   - [Installation](#installation)
+   - [Configuration](#configuration)
+7. [Usage](#usage)
+8. [Known Limitations & Future Improvements](#known-limitations--future-improvements)
+9. [Contact](#contact)
+10. [License](#license)
 
-### Issue Tracking (v1.2.0)
-- **GitHub Issue Creation** — Auto-creates a tracked GitHub issue for every high/medium severity finding, labelled by priority
-- **Merge Blocking** — Merge button is disabled the moment a PR opens; enabled only after a clean review pass
-- **Auto-Unblock** — `resolve-check.yml` watches for issue closures and re-enables merging once all problems are resolved
+---
 
-### Quality & Security (v1.3.0)
-- **No PAT required** — Uses the built-in `github.token` (auto-scoped per run); only `CLAUDE_API_KEY` needs to be added as a secret
-- **False-positive filtering** — Prompt instruction + post-parse filter prevent positive observations appearing as issues
-- **Issue location for all severities** — `📍 Location` shown for high, medium, and low findings; Claude required to always populate the field
-- **Visible status failures** — `::error::` annotation emitted if commit status update fails, so PRs never stay silently stuck
+## Architecture Overview
 
-### Reliability (v1.1.0)
-- **Automatic Retries** — Exponential backoff for transient API failures (3 attempts)
-- **Pagination Support** — Analyzes PRs with unlimited file changes
-- **Large PR Handling** — Intelligent truncation for PRs exceeding 100k tokens
-- **Request Timeouts** — 30-second timeout prevents hanging requests
-- **Response Validation** — Validates Claude's JSON against schema
+The system is split into two coordinated workflows and five focused components:
+
+### Review Workflow (`code-review.yml`)
+- Triggers on every pull request (opened, synchronized, reopened) or manually via `workflow_dispatch`
+- Immediately sets the commit status to `pending` — blocking the merge button before analysis begins
+- Fetches the PR diff, annotates each line with its actual file line number, and sends the annotated code to Claude
+- Posts inline review comments, a severity-grouped summary, and GitHub issues for each blocking finding
+- Sets the final commit status (`success` or `failure`) based on findings
+
+### Resolve Workflow (`resolve-check.yml`)
+- Triggers when any GitHub issue is closed
+- Uses a triple gate (label + bot identity + body marker) to filter only skill-created issues
+- Re-counts open findings for the associated PR and flips the commit status to `success` when all are resolved
+
+### High-Level Flow
+
+```
+Pull Request
+     │
+     ▼
+code-review.yml
+     │
+     ├── Standards YAML → StandardsEngine → Prompt
+     │
+     ├── GitHub Diff → annotatePatchLines → Annotated Code
+     │
+     └── Prompt + Code → Claude API → JSON Response
+                                            │
+                              ┌─────────────┼─────────────┐
+                              ▼             ▼             ▼
+                       Inline Comments  PR Summary   GitHub Issues
+                              │             │             │
+                              └─────────────┴─────────────┘
+                                            │
+                                    Commit Status
+                                  (failure / success)
+
+Issue Closed by Developer
+     │
+     ▼
+resolve-check.yml → Re-count open issues → Update Commit Status
+```
+
+---
+
+### Project Structure
+
+```
+.github/
+  workflows/
+    code-review.yml       # Main review workflow
+    resolve-check.yml     # Auto-unblock on issue close
+config/
+  standards.yaml          # 43 configurable coding standards
+src/
+  orchestrator.ts         # Main workflow coordinator
+  cli.ts                  # CLI entry point for local runs
+  formatters/
+    analysis-formatter.ts # Parses Claude response → GitHub comments
+  services/
+    claude-service.ts     # Claude API client with retry logic
+    standards-engine.ts   # Loads standards.yaml, builds prompts
+    logger.ts             # Structured logger with log-level control
+    github/
+      github-service.ts   # Octokit wrapper (diffs, comments, issues, statuses)
+      github-config.ts    # Token and config loader
+```
 
 ---
 
@@ -43,7 +107,7 @@ An AI-powered code review tool that automatically analyzes GitHub pull requests 
 PR opened / new commit pushed
   └─ code-review.yml triggers
        │
-       ├─ 1. Immediately set code-review/issues → FAILURE
+       ├─ 1. Set code-review/issues → PENDING
        │      "Code review in progress..."  ← merge button disabled
        │
        ├─ 2. Fetch PR context and diffs from GitHub
@@ -51,46 +115,125 @@ PR opened / new commit pushed
        ├─ 3. Annotate each diff line with its actual file line number
        │      so Claude reports the exact offending statement
        │
-       ├─ 4. Build analysis prompt (code + 43 standards rules)
+       ├─ 4. Build analysis prompt (annotated code + 43 standards rules)
        │
        ├─ 5. Send to Claude Opus 4.6
        │
        ├─ 6. Post inline review comments on specific lines
        │
-       ├─ 7. Post summary comment (all issues grouped by severity)
+       ├─ 7. Post severity-grouped summary comment on the PR
        │
        └─ 8. For each high/medium severity issue:
               ├─ Create a GitHub issue (labelled code-review + priority)
-              ├─ Keep status → FAILURE  "N issue(s) to resolve"
+              ├─ Set status → FAILURE  "N issue(s) to resolve"
               └─ If zero issues → set status → SUCCESS  ← merge enabled
 
 Issue closed by developer
   └─ resolve-check.yml triggers
-       ├─ Count remaining open code-review issues for this PR
+       ├─ Verify issue was created by github-actions[bot] + has body marker
+       ├─ Re-count remaining open code-review issues for this PR
        ├─ If > 0 → keep FAILURE
        └─ If = 0 → set SUCCESS  ← merge button re-enabled
 ```
 
 ---
 
-## Setup
+## Design Decisions
+
+### Line-accurate inline comments
+GitHub's diff API returns patch hunks with diff-relative offsets, not actual file line numbers. The orchestrator pre-processes each patch and annotates every line with a synthetic `L<n>` prefix before sending to Claude. This ensures the model's `location` field (e.g. `src/auth.ts:42`) maps directly to the correct file line and can be resolved to a valid inline comment position in the PR diff.
+
+### Two-layer false-positive suppression
+When Claude has nothing to flag for a piece of code, it sometimes fills the issues array with a positive observation instead of leaving it empty. Two layers guard against this: the prompt explicitly instructs Claude not to include no-op entries, and `AnalysisFormatter` post-filters any issue whose `suggestion` matches a no-op pattern (`/no change needed/i`, etc.) before rendering. Either layer alone is insufficient; together they handle prompt non-compliance and edge-case phrasings.
+
+### Context window management
+Large PRs can exceed Claude's context limit. The orchestrator estimates token count using a 4 chars/token heuristic, targets 100k tokens, and when approaching the limit truncates diffs file-by-file until the prompt fits within 150k. The largest individual file is always retained. Truncation is logged so developers can see which files were excluded.
+
+### Race-condition-safe merge unblocking
+Rather than polling after the review completes, a separate workflow watches for issue-close events. It re-counts open issues at close time and only flips the status when the count reaches zero. A triple gate (label + `github-actions[bot]` identity + body marker) prevents spurious triggers from unrelated issue closures.
+
+### No long-lived credentials
+The skill uses GitHub's built-in `github.token` (scoped to each run, auto-expires). Issues are created as `github-actions[bot]`. Only `CLAUDE_API_KEY` needs to be stored as a repository secret.
+
+### Sanitized error messages
+All errors shown to users pass through `safeErrorMessage()`, which maps specific HTTP codes to generic messages, strips non-printable characters, and caps output at 80 characters. API keys, internal paths, and raw API responses never appear in logs or annotations.
+
+---
+
+## Features
+
+### Core Review
+- Automatic PR analysis triggered on open, sync, or reopen
+- Inline comments posted directly on the offending diff line
+- Severity-grouped summary comment on the PR
+- Manual trigger via `workflow_dispatch` with custom PR number
+
+### Issue Tracking & Merge Control
+- One GitHub issue created per high/medium severity finding, labelled by priority
+- Merge button disabled from the moment the PR opens
+- Auto-unblock when all findings are resolved — no manual intervention required
+
+### Reliability
+- Exponential backoff with up to 3 retries for transient API failures
+- `Retry-After` header respected for GitHub rate limit responses
+- 30-second per-request timeout on Claude API calls
+- Intelligent prompt truncation for PRs exceeding 100k tokens
+- JSON schema validation on Claude's response before any processing
+- `::error::` annotation emitted if a commit status update fails silently
+
+---
+
+## What It Reviews
+
+### Security (14 rules)
+SQL injection, hardcoded secrets, unsafe deserialization, authentication gaps, XSS, input validation, resource leaks, weak cryptography, race conditions, template injection, default credentials, weak randomness, unvalidated redirects, path traversal
+
+### Performance (8 rules)
+N+1 queries, O(n²) algorithms, missing caching, memory leaks, unnecessary operations, query optimisation, API rate limiting, batch processing
+
+### Style (9 rules)
+Naming conventions, function length (max 80 lines), error handling, code duplication, documentation, deep nesting (max 3 levels), magic numbers, consistent spacing, dead code
+
+### Best Practices (12 rules)
+Modern idioms, design patterns, testability, console logs in production, error messages, logging levels, data exposure, dependency updates, backwards compatibility, concurrency safety, immutability, functional style
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- GitHub repository
-- Claude API key (Anthropic console)
 
-### 1. Clone and install
+- Node.js **22+**
+- GitHub repository
+- Claude API key ([Anthropic console](https://console.anthropic.com))
+
+---
+
+### Installation
+
+Copy both workflow files into the target repository:
+
+```
+.github/workflows/code-review.yml
+.github/workflows/resolve-check.yml
+```
+
+For local CLI use, clone and install:
 
 ```bash
 git clone https://github.com/arbelamram/claude-code-reviewer.git
 cd claude-code-reviewer
 npm install
+npm run build
 ```
 
-### 2. Add GitHub secrets
+---
 
-Go to your repo → **Settings → Secrets and variables → Actions** and add:
+### Configuration
+
+#### GitHub Secret
+
+Go to **Settings → Secrets and variables → Actions** and add:
 
 | Secret | Value |
 |--------|-------|
@@ -98,117 +241,117 @@ Go to your repo → **Settings → Secrets and variables → Actions** and add:
 
 > GitHub API access uses the built-in `github.token` — no personal access token required.
 
-### 3. Configure branch protection
+#### Branch Protection
 
 For merge blocking to work, add `code-review/issues` as a required status check:
 
 1. Go to **Settings → Rules → Add branch ruleset**
 2. Target branch: `main`
-3. Enable **Require status checks to pass** → add `code-review/issues`
+3. Enable **Require status checks to pass** → search for `code-review/issues`
 4. Save
 
-> The check name appears in the dropdown after the workflow has run at least once.
+> The check name appears in the search dropdown after the workflow has run at least once on a PR.
 
-### 4. Local environment (optional, for CLI use)
+#### Local Environment Variables
 
 ```bash
 cp .env.example .env
 # Fill in: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO, CLAUDE_API_KEY
 ```
 
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `CLAUDE_API_KEY` | Yes | — | Anthropic API key |
+| `GITHUB_TOKEN` | CLI only | — | GitHub personal access token — not needed in GitHub Actions (uses built-in `github.token`); required for local CLI runs only |
+| `GITHUB_OWNER` | Yes | — | Repository owner |
+| `GITHUB_REPO` | Yes | — | Repository name |
+| `PR_NUMBER` | Yes | — | PR number to review |
+| `ENABLE_ISSUE_CREATION` | No | `false` | Set `true` to create GitHub issues for findings |
+| `LOG_LEVEL` | No | `INFO` | Verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` |
+
+⚠️ Do not commit `.env` files — they are excluded via `.gitignore`.
+
+#### Coding Standards
+
+Enable, disable, or adjust the severity of individual rules in `config/standards.yaml`:
+
+```yaml
+security:
+  enabled: true
+  rules:
+    check_sql_injection:
+      enabled: true
+      severity: high
+    check_hardcoded_secrets:
+      enabled: true
+      severity: high
+```
+
 ---
 
 ## Usage
 
-### Automatic (recommended)
+### Automatic
 Open a pull request — the review runs automatically.
 
-### Manual CLI
+### Manual Workflow Trigger
+Actions → **Claude Code Review** → **Run workflow** → enter PR number.
+
+### Local CLI
 ```bash
-npm run build
 GITHUB_OWNER=your_user GITHUB_REPO=your_repo PR_NUMBER=1 npm run review
 ```
 
-### Manual workflow trigger
-Actions → Claude Code Review → Run workflow → enter PR number.
-
-### Customize standards
-Edit `config/standards.yaml` to enable/disable rules or adjust severity levels.
-
----
-
-## Project Structure
-
-```
-.github/
-  workflows/
-    code-review.yml       # Main review workflow (runs on every PR)
-    resolve-check.yml     # Unblocks PR when all issues are resolved
-config/
-  standards.yaml          # 43 coding standards rules
-src/
-  formatters/
-    analysis-formatter.ts # Parses Claude response → GitHub comments
-  services/
-    claude-service.ts     # Claude API client (Opus 4.6)
-    standards-engine.ts   # Loads standards.yaml, builds prompts
-    github/
-      github-config.ts    # Reads GITHUB_TOKEN from environment
-      github-service.ts   # Octokit wrapper (diffs, comments, issues, statuses)
-  tests/                  # Test files
-  cli.ts                  # CLI entry point
-  orchestrator.ts         # Main workflow coordinator
-```
-
----
-
-## What It Reviews
-
-### Security (14 rules)
-SQL injection, hardcoded secrets, unsafe deserialization, auth gaps, XSS, input validation, resource leaks, weak cryptography, race conditions, template injection, default credentials, weak randomness, unvalidated redirects, path traversal
-
-### Performance (8 rules)
-N+1 queries, O(n²) algorithms, missing caching, memory leaks, unnecessary operations, query optimisation, API rate limiting, batch processing
-
-### Style (9 rules)
-Naming conventions, function length, error handling, code duplication, documentation, deep nesting, magic numbers, consistent spacing, dead code
-
-### Best Practices (12 rules)
-Modern idioms, design patterns, testability, console logs in production, error messages, logging levels, data exposure, dependency updates, backwards compatibility, concurrency safety, immutability, functional style
-
----
-
-## Deploying to Another Project
-
-The workflows fetch the reviewer source code from this public repo at runtime — no source files need to be copied.
-
-1. Copy `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo's `.github/workflows/`
-2. Add `CLAUDE_API_KEY` as a repository secret (no PAT needed — uses `github.token`)
-3. Set up branch protection with `code-review/issues` as a required status check
-4. Open a PR — the review runs automatically
-
-To use custom coding standards, fork this repo, update `config/standards.yaml`, and change the `repository:` reference in the checkout step of `code-review.yml` to point to your fork.
+### Custom Standards
+Edit `config/standards.yaml` to adjust which rules are active and at what severity. No code changes required — the StandardsEngine reads the file at runtime.
 
 ---
 
 ## Troubleshooting
 
-**"Claude API error: credit balance too low"** — Add credits at console.anthropic.com.
+**Merge button stays blocked after closing all issues** — `resolve-check.yml` only fires for issues created by `github-actions[bot]`. Manually created issues with the `code-review` label won't trigger it.
 
-**Merge button stays blocked after closing issues** — The `resolve-check.yml` workflow only fires for issues created by `github-actions[bot]`. Manually created issues with the `code-review` label won't trigger it.
+**"Claude API error: 401 Unauthorized"** — Check that `CLAUDE_API_KEY` is set correctly in repo secrets and has not expired.
 
-**Inline comments marked "Outdated"** — Expected behavior when a new commit is pushed after comments were posted. GitHub marks them outdated because the underlying code changed.
+**"Claude API error: credit balance too low"** — Add credits at [console.anthropic.com](https://console.anthropic.com).
 
----
+**No inline comments, only a summary** — The `location` field wasn't parseable for those findings. Claude is instructed to always populate it but may occasionally omit it. All findings still appear in the summary comment.
 
-## Architecture
+**Inline comments marked "Outdated"** — Expected. GitHub marks comments outdated when a new commit is pushed after they were posted, signalling the underlying code may have changed.
 
-**StandardsEngine** — Loads and validates coding standards from YAML  
-**ClaudeService** — Sends prompts to Claude API, handles retries and timeouts  
-**GitHubService** — Octokit wrapper: fetches diffs, posts comments, creates issues, sets commit statuses  
-**AnalysisFormatter** — Parses Claude's JSON response, converts to inline comments and PR comment markdown  
-**CodeReviewOrchestrator** — Coordinates the full workflow end-to-end  
+**Review never triggers** — Confirm `code-review.yml` is on the default branch (`main`). GitHub Actions only reads workflow files from the default branch.
 
 ---
 
-**Last Updated:** May 18, 2026 | **Version:** 1.3.0
+## Known Limitations & Future Improvements
+
+- Language-specific rules (TypeScript `check_any_usage`, JavaScript `check_promise_handling`, etc.) are defined in `standards.yaml` but not yet included in the analysis prompt
+- Boolean-format rules (`rule_name: true`) in `standards.yaml` are currently skipped by the standards engine
+- Inline comments are posted sequentially rather than batched into a single GitHub review API call
+- Token estimation uses a 4 chars/token heuristic — actual counts vary by content
+- No native test command (`npm test`) — test files exist but are not wired to a test runner
+
+Planned enhancements:
+
+- Fix standards engine to handle boolean rules and language-specific rules
+- Add job-level timeout to prevent 6-hour hangs if Claude API is unresponsive
+- Batch inline comments into a single review API call
+- Add Jest/Vitest unit tests and a `npm test` script
+- Dashboard for review history and metrics
+- Slack/email notifications on review completion
+
+---
+
+## Contact
+
+For questions or feedback, open a [GitHub issue](https://github.com/arbelamram/claude-code-reviewer/issues) or reach out via [GitHub](https://github.com/arbelamram).
+
+---
+
+## License
+
+This project is source-available for viewing and educational purposes.  
+Copying, redistribution, or use in any project is prohibited without explicit written permission.  
+See [LICENSE](./LICENSE) for full terms.
+
+© 2026 Arbel Amram
