@@ -39,7 +39,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: context.payload.pull_request.head.sha,
-              state: 'failure',
+              state: 'pending',
               description: 'Code review in progress...',
               context: 'code-review/issues',
             });
