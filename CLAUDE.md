@@ -92,6 +92,15 @@ To customize for your project, edit `config/standards.yaml` and set `enabled: tr
 
 See `.env.example` for the template. In GitHub Actions, these are configured as repository secrets.
 
+## After Merging a Fix
+
+After every successful merge, update the two tracking files before moving to the next task:
+
+1. **`FIX_TRACKER.md`** (local, not committed) — mark the branch row as `✔ done`, add the commit SHA, and record any lessons learned or patterns to avoid in future fixes.
+2. **`PROGRESS.md`** — add the completed work under the relevant week section; move any items from future/pending lists to completed if they are now done.
+
+Skip this step only if the merge was a trivial doc-only change with no behaviour impact.
+
 ## Common Development Tasks
 
 ### Adding a New Coding Rule
