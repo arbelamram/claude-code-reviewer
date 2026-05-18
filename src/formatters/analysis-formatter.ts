@@ -158,17 +158,19 @@ interface CodeIssue {
           comment += '#### 🔴 High Severity\n';
           high.forEach((issue, idx) => {
             comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
+            comment += '\n';
             if (issue.location) comment += `   📍 Location: ${issue.location}\n`;
             comment += `   💡 Fix: ${issue.suggestion}\n`;
             if (issue.example) comment += `   📝 Example: \`${issue.example}\`\n`;
             comment += '\n';
           });
         }
-  
+
         if (medium.length > 0) {
           comment += '#### 🟡 Medium Severity\n';
           medium.forEach((issue, idx) => {
             comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
+            comment += '\n';
             if (issue.location) comment += `   📍 Location: ${issue.location}\n`;
             comment += `   💡 Suggestion: ${issue.suggestion}\n`;
             comment += '\n';
@@ -180,8 +182,8 @@ interface CodeIssue {
           low.forEach((issue, idx) => {
             comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
             if (issue.location) comment += `   📍 Location: ${issue.location}\n`;
+            comment += '\n';
           });
-          comment += '\n';
         }
       } else {
         comment += '✅ **No issues found!**\n\n';
