@@ -166,7 +166,7 @@ ${codeToReview}
 
 IMPORTANT:
 - Use the "L<n>" prefix to determine the exact line number where the issue occurs.
-- For the location field, use the format: filepath:line_number (e.g. src/auth.ts:42).
+- The "location" field is REQUIRED for every issue. Always populate it using the format: filepath:line_number (e.g. src/auth.ts:42) or filepath:startLine-endLine (e.g. src/auth.ts:40-45). Never omit it.
 - Report the line number of the specific statement that is the problem, not a surrounding bracket or closing line.
 - Only include an entry in "issues" if the code requires an actual change. Do NOT add observations, compliments, or notes that require no action — if you have nothing to flag, return an empty array.
 - The "suggestion" field must describe a concrete code change. Never write "No change needed", "No action required", or any equivalent no-op phrase.

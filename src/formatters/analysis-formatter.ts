@@ -169,15 +169,17 @@ interface CodeIssue {
           comment += '#### 🟡 Medium Severity\n';
           medium.forEach((issue, idx) => {
             comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
+            if (issue.location) comment += `   📍 Location: ${issue.location}\n`;
             comment += `   💡 Suggestion: ${issue.suggestion}\n`;
             comment += '\n';
           });
         }
-  
+
         if (low.length > 0) {
           comment += '#### 🟢 Low Severity\n';
           low.forEach((issue, idx) => {
             comment += `${idx + 1}. **${issue.type}**: ${issue.message}\n`;
+            if (issue.location) comment += `   📍 Location: ${issue.location}\n`;
           });
           comment += '\n';
         }
