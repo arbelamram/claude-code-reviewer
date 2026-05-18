@@ -6,10 +6,14 @@ on:
 
 jobs:
   unblock-pr:
-    # Run for any closed issue carrying the code-review label.
-    # The label is the correct gate: issues are created via GH_TOKEN (a PAT),
-    # so user.login is the PAT owner, not 'github-actions[bot]'.
-    if: contains(github.event.issue.labels.*.name, 'code-review')
+    # Run only for code-review issues created by the repository owner.
+    # Issues are created via GH_TOKEN (a PAT owned by the repo owner), so
+    # user.login equals github.repository_owner — not 'github-actions[bot]'.
+    # This prevents write-access contributors from triggering unblock by closing
+    # issues they created themselves with the code-review label.
+    if: |
+      contains(github.event.issue.labels.*.name, 'code-review') &&
+      github.event.issue.user.login == github.repository_owner
     runs-on: ubuntu-latest
 
     permissions:
