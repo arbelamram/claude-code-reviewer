@@ -127,6 +127,18 @@ class CodeReviewOrchestrator {
 
       if (diffs.length === 0) {
         this.log.info('⏭️  All changed files are in excluded paths — skipping Claude analysis');
+        await this.githubService.postPRComment({
+          owner:    options.owner,
+          repo:     options.repo,
+          prNumber: options.prNumber,
+          comment: [
+            '## 🔍 Code Review Analysis',
+            '',
+            '⏭️  **All changed files are in excluded paths** — no code review needed for this PR.',
+            '',
+            'To adjust which files are excluded, edit `review_config.exclude_paths` in `config/standards.yaml`.',
+          ].join('\n'),
+        });
         await this.trySetCommitStatus(
           options.owner, options.repo, prContext.headSha,
           CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
