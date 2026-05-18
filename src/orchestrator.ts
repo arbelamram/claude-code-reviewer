@@ -63,6 +63,7 @@ class CodeReviewOrchestrator {
   private readonly claudeService: ClaudeService;
   private readonly config: OrchestratorConfig;
   private readonly log: Logger;
+  private compiledExcludes: Array<{ regex: RegExp; useFullPath: boolean }> | null = null;
 
   private static readonly SEVERITY_LABEL: Record<string, string> = {
     high:   'priority: high',
@@ -122,6 +123,22 @@ class CodeReviewOrchestrator {
 
     try {
       const { prContext, diffs } = await this.fetchPRData(options);
+
+      if (diffs.length === 0) {
+        this.log.info('⏭️  All changed files are in excluded paths — skipping Claude analysis');
+        try {
+          await this.githubService.setCommitStatus(
+            options.owner, options.repo, prContext.headSha,
+            CodeReviewOrchestrator.COMMIT_STATE.SUCCESS,
+            'No reviewable code files changed'
+          );
+        } catch (err: unknown) {
+          this.log.warn(`⚠️  Status update failed: ${this.safeErrorMessage(err)}`);
+          process.stdout.write(`::error::Commit status update failed — PR may stay blocked: ${this.safeErrorMessage(err)}\n`);
+        }
+        return;
+      }
+
       const analysis             = await this.analyseCode(diffs);
       const inlineCount          = await this.postResults(options, analysis);
 
@@ -177,9 +194,10 @@ class CodeReviewOrchestrator {
       options.owner, options.repo, options.prNumber
     );
 
-    const excludePatterns = this.standardsEngine.getExcludePaths();
-    const compiledExcludes = this.compileExcludePatterns(excludePatterns);
-    const diffs = rawDiffs.filter(d => !this.isExcluded(d.fileName, compiledExcludes));
+    if (!this.compiledExcludes) {
+      this.compiledExcludes = this.compileExcludePatterns(this.standardsEngine.getExcludePaths());
+    }
+    const diffs = rawDiffs.filter(d => !this.isExcluded(d.fileName, this.compiledExcludes!));
     const skipped = rawDiffs.length - diffs.length;
     if (skipped > 0) {
       this.log.info(`⏭️  Skipped ${skipped} non-code file(s) (matched exclude_paths in standards.yaml)`);
@@ -405,9 +423,14 @@ class CodeReviewOrchestrator {
   // first so that dots, question marks, etc. in pattern literals are treated literally.
   // Patterns MUST come from trusted config (standards.yaml) — never from user input.
   private globToRegex(pattern: string): RegExp {
-    return new RegExp(
-      '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
-    );
+    try {
+      return new RegExp(
+        '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'
+      );
+    } catch {
+      this.log.warn(`⚠️  Exclude pattern "${pattern}" is invalid and will be skipped`);
+      return /(?!)/; // never matches
+    }
   }
 
   private isExcluded(
