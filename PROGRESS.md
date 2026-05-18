@@ -18,6 +18,7 @@
 - ✅ fix/pending-initial-status — Initial commit status changed from failure → pending while review runs
 - ✅ docs/license-and-readme — LICENSE file added; README rewritten with badges, ToC, Design Decisions
 - ✅ fix/file-type-filtering — Non-code files excluded from review via configurable exclude_paths in standards.yaml; trySetCommitStatus helper extracted; PR comment posted when all files excluded
+- ✅ fix/prompt-false-positives — 4 prompt rules added to suppress missing-import noise, acknowledged-tradeoff re-flagging, metadata/badge complaints, and library-swap opinions; NO_OP_PATTERNS expanded with Class 3 filter
 
 ---
 
