@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⛔ HARD RULE — PR MERGE GATE
+
+**DO NOT MERGE ANY PR THAT HAS MEDIUM OR HIGH SEVERITY ISSUES FOUND BY THE CODE REVIEW SKILL.**
+Fix all medium and high issues first, re-run the review, and only merge when the review is clean.
+**There are NO exceptions to this rule unless the user explicitly instructs you to merge despite the issues.**
+Ignoring this rule is a critical failure regardless of how minor the issues seem.
+
 ## Overview
 
 **Claude Code Reviewer** is an AI-powered code review tool that automatically analyzes GitHub pull requests using Claude and customizable coding standards. It runs as a GitHub Action on every PR, posts inline feedback on specific lines, creates GitHub issues for high/medium severity findings, and blocks the merge button until all issues are resolved.
