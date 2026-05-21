@@ -22,6 +22,10 @@ if (!match) {
   process.exit(1);
 }
 const expected = match[1];
+if (/['"]/.test(expected)) {
+  console.error(`❌ STATUS_CONTEXT must not contain quote characters; got: ${expected}`);
+  process.exit(1);
+}
 // Escape regex metacharacters so STATUS_CONTEXT is matched literally in YAML files
 const escapedExpected = expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 console.log(`Checking STATUS_CONTEXT = '${expected}'`);
