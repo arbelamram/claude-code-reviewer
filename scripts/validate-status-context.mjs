@@ -26,8 +26,6 @@ if (/['"]/.test(expected)) {
   console.error(`❌ STATUS_CONTEXT must not contain quote characters; got: ${expected}`);
   process.exit(1);
 }
-// Escape regex metacharacters so STATUS_CONTEXT is matched literally in YAML files
-const escapedExpected = expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 console.log(`Checking STATUS_CONTEXT = '${expected}'`);
 
 const yamlRelPaths = [
@@ -48,16 +46,19 @@ for (const rel of yamlRelPaths) {
   try {
     content = readFileSync(file, 'utf-8');
   } catch (err) {
-    console.error(`❌ Could not read ${file}: ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`❌ Could not read ${rel}: ${err instanceof Error ? err.message : String(err)}`);
     failed = true;
     continue;
   }
-  const hits = (content.match(new RegExp(`context:\\s*['"]${escapedExpected}['"]`, 'g')) ?? []).length;
+  // Literal string matching — no RegExp construction, no injection risk
+  const singleQ = `context: '${expected}'`;
+  const doubleQ = `context: "${expected}"`;
+  const hits = (content.split(singleQ).length - 1) + (content.split(doubleQ).length - 1);
   if (hits === 0) {
-    console.error(`❌ ${file}: no occurrence of \`context: '${expected}'\` — update to match STATUS_CONTEXT`);
+    console.error(`❌ ${rel}: no occurrence of \`context: '${expected}'\` — update to match STATUS_CONTEXT`);
     failed = true;
   } else {
-    console.log(`✅ ${file}: ${hits} matching occurrence(s)`);
+    console.log(`✅ ${rel}: ${hits} matching occurrence(s)`);
   }
 }
 
