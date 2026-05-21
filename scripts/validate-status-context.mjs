@@ -11,7 +11,9 @@ import { join, dirname } from 'path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const constantsSource = readFileSync(join(root, 'src/constants.ts'), 'utf-8');
-// Backreference \1 requires opening and closing quote to match, preventing false extraction
+// Extracts STATUS_CONTEXT assuming it is a plain string literal with no escape
+// sequences or template expressions — see constraint comment in src/constants.ts.
+// Backreference \1 requires matching open/close quotes to prevent false extraction.
 const match = constantsSource.match(/STATUS_CONTEXT\s*=\s*(['"`])([^'"`]+)\1/);
 if (!match) {
   console.error('❌ Could not locate STATUS_CONTEXT in src/constants.ts');
