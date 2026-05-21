@@ -1,6 +1,6 @@
 # Claude Code Reviewer — Progress Tracker
 
-**Version:** 1.3.0 | **Updated:** May 18, 2026
+**Version:** 1.3.0 | **Updated:** May 21, 2026
 
 ---
 
@@ -23,7 +23,7 @@
 - ✅ fix/language-rules-unused — Language-specific rules (JS/TS/Python) now appended to prompt in `getEnabledRulesAsText()` second loop; `countEnabledRules()` updated to match
 - ✅ fix/job-timeout — `timeout-minutes: 10` added to the Run Claude Code Review step in `code-review.yml`; prevents a hung Claude API call from consuming the 6-hour default
 - ✅ fix/inline-comment-batching — Single `createReview` call replaces per-comment loop; per-comment fallback preserved for resilience on batch rejection
-- ✅ fix/job-timeout — `timeout-minutes: 10` added to the Run Claude Code Review step in `code-review.yml`; prevents a hung Claude API call from consuming the 6-hour default
+- ✅ fix/status-context-constant — `STATUS_CONTEXT` extracted to `src/constants.ts`; imported in `github-service.ts`; source-of-truth comments added to both YAML workflow files
 
 ---
 
@@ -38,9 +38,6 @@
 ### 🟠 Priority 2 — High (reliability & maintainability)
 
 - [x] **fix/version-sync** — `package.json` version synced to `1.3.0`; description, author, keywords, license all updated.
-- [x] **fix/inline-comment-batching** — Batched into single `createReview` call; per-comment fallback added for all-or-nothing rejection resilience.
-- [ ] **fix/status-context-constant** — The string `'code-review/issues'` is hardcoded independently in `github-service.ts`, `orchestrator.ts`, `code-review.yml`, and `resolve-check.yml`. Extract to shared constant. One drift breaks the entire flow.
-
 ### 🟡 Priority 3 — Medium (gaps worth addressing)
 
 - [ ] **fix/remove-node-fetch** — Project runs on Node 22 (native `fetch` available). Remove outdated `node-fetch` dependency and `@types/node-fetch`. File: `src/services/claude-service.ts` line 1, `package.json`.
