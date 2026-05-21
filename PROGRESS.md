@@ -24,6 +24,7 @@
 - ✅ fix/job-timeout — `timeout-minutes: 10` added to the Run Claude Code Review step in `code-review.yml`; prevents a hung Claude API call from consuming the 6-hour default
 - ✅ fix/inline-comment-batching — Single `createReview` call replaces per-comment loop; per-comment fallback preserved for resilience on batch rejection
 - ✅ fix/status-context-constant — `STATUS_CONTEXT` extracted to `src/constants.ts`; imported in `github-service.ts`; source-of-truth comments added to both YAML workflow files
+- ✅ fix/status-context-validation — `scripts/validate-status-context.mjs` added; prebuild hook gates every build; 9 revision cycles against GitHub Actions reviewer until EXCELLENT with no medium/high issues; two-gate review process documented in CLAUDE.md
 
 ---
 
