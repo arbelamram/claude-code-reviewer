@@ -5,11 +5,13 @@
   "description": "AI-powered GitHub PR code reviewer using Claude and configurable coding standards",
   "main": "index.js",
   "scripts": {
+    "prebuild": "node scripts/validate-status-context.mjs",
     "build": "tsc",
     "start": "ts-node src/index.ts",
     "dev": "ts-node src/index.ts",
     "cli": "ts-node src/cli.ts",
-    "review": "node dist/cli.js"
+    "review": "node dist/cli.js",
+    "validate:constants": "node scripts/validate-status-context.mjs"
   },
   "keywords": ["code-review", "github-actions", "claude", "ai", "typescript", "pull-request"],
   "author": "Arbel Amram",

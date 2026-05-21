@@ -4,9 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ⛔ HARD RULE — PR MERGE GATE
 
-**DO NOT MERGE ANY PR THAT HAS MEDIUM OR HIGH SEVERITY ISSUES FOUND BY THE CODE REVIEW SKILL.**
-Fix all medium and high issues first, re-run the review, and only merge when the review is clean.
-**There are NO exceptions to this rule unless the user explicitly instructs you to merge despite the issues.**
+**THERE ARE TWO MANDATORY REVIEW GATES. BOTH MUST BE CLEAN BEFORE MERGING.**
+
+### Gate 1 — Pre-push: `/review` skill on local diff
+Run the `/review` skill before every `git push`. If it finds any medium or high severity issue, fix it and re-run until clean. Do NOT push with known medium/high issues.
+
+### Gate 2 — Post-push: GitHub Actions code reviewer on the live PR
+After pushing and opening a PR, the GitHub Actions workflow posts a review comment on the PR. **Wait for it and read it before merging.** If it finds any medium or high severity issue:
+1. Fix the issue on the branch
+2. Push the fix
+3. Wait for the GitHub Actions review to re-run
+4. Repeat until the GitHub Actions review is also clean
+Then merge.
+
+**Checking only Gate 1 and ignoring Gate 2 is a violation of this rule.**
+**There are NO exceptions unless the user explicitly instructs you to merge despite the issues.**
 Ignoring this rule is a critical failure regardless of how minor the issues seem.
 
 ## Overview
