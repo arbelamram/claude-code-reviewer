@@ -84,7 +84,7 @@ resolve-check.yml → Re-count open issues → Update Commit Status
     code-review.yml       # Main review workflow
     resolve-check.yml     # Auto-unblock on issue close
 config/
-  standards.yaml          # 43 configurable coding standards
+  standards.yaml          # 53 configurable coding standards
 src/
   orchestrator.ts         # Main workflow coordinator
   cli.ts                  # CLI entry point for local runs
@@ -115,7 +115,7 @@ PR opened / new commit pushed
        ├─ 3. Annotate each diff line with its actual file line number
        │      so Claude reports the exact offending statement
        │
-       ├─ 4. Build analysis prompt (annotated code + 43 standards rules)
+       ├─ 4. Build analysis prompt (annotated code + 53 standards rules)
        │
        ├─ 5. Send to Claude Opus 4.6
        │
