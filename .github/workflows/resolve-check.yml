@@ -93,7 +93,7 @@ jobs:
               sha: process.env.HEAD_SHA,
               state: 'success',
               description: 'All code review issues have been resolved',
-              context: 'code-review/issues',
+              context: 'code-review/issues', // source of truth: src/constants.ts STATUS_CONTEXT
             });
             core.info('Commit status updated to success — PR is now unblocked');
 
@@ -114,6 +114,6 @@ jobs:
               sha: process.env.HEAD_SHA,
               state: 'failure',
               description: `${remaining} code review issue(s) must be resolved before merging`,
-              context: 'code-review/issues',
+              context: 'code-review/issues', // source of truth: src/constants.ts STATUS_CONTEXT
             });
             core.info(`${remaining} issue(s) still open — PR remains blocked`);
