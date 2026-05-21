@@ -63,6 +63,7 @@ jobs:
         run: npm run build
 
       - name: Run Claude Code Review
+        timeout-minutes: 10
         env:
           GITHUB_OWNER: ${{ inputs.owner || github.repository_owner }}
           GITHUB_REPO: ${{ inputs.repo || github.event.repository.name }}
