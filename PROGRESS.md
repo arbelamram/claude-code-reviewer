@@ -21,6 +21,9 @@
 - ✅ fix/prompt-false-positives — 4 prompt rules added to suppress missing-import noise, acknowledged-tradeoff re-flagging, metadata/badge complaints, and library-swap opinions; NO_OP_PATTERNS expanded with Class 3 filter
 - ✅ fix/standards-engine-bool-rules — Boolean-format rules (`rule: true`) now included via `getRuleName()` + `METADATA_KEYS` exclusion set; `enabled: false` on individual rules respected
 - ✅ fix/language-rules-unused — Language-specific rules (JS/TS/Python) now appended to prompt in `getEnabledRulesAsText()` second loop; `countEnabledRules()` updated to match
+- ✅ fix/job-timeout — `timeout-minutes: 10` added to the Run Claude Code Review step in `code-review.yml`; prevents a hung Claude API call from consuming the 6-hour default
+- ✅ fix/inline-comment-batching — Single `createReview` call replaces per-comment loop; per-comment fallback preserved for resilience on batch rejection
+- ✅ fix/job-timeout — `timeout-minutes: 10` added to the Run Claude Code Review step in `code-review.yml`; prevents a hung Claude API call from consuming the 6-hour default
 
 ---
 
@@ -34,10 +37,8 @@
 
 ### 🟠 Priority 2 — High (reliability & maintainability)
 
-- [ ] **fix/job-timeout** — `npm run review` step in `code-review.yml` has no `timeout-minutes`. A hung Claude API call runs for GitHub's 6-hour default. Fix: add `timeout-minutes: 10` to the run step.
-- [ ] **fix/anthropic-api-version** — `claude-service.ts` hardcodes `anthropic-version: '2023-06-01'` (outdated). Update to current version. File: `src/services/claude-service.ts` line 76.
 - [x] **fix/version-sync** — `package.json` version synced to `1.3.0`; description, author, keywords, license all updated.
-- [ ] **fix/inline-comment-batching** — `github-service.ts` posts each inline comment as a separate API call. GitHub's review API accepts all comments in one call. Fix reduces latency and rate limit exposure. File: `src/services/github/github-service.ts` lines 148–164.
+- [x] **fix/inline-comment-batching** — Batched into single `createReview` call; per-comment fallback added for all-or-nothing rejection resilience.
 - [ ] **fix/status-context-constant** — The string `'code-review/issues'` is hardcoded independently in `github-service.ts`, `orchestrator.ts`, `code-review.yml`, and `resolve-check.yml`. Extract to shared constant. One drift breaks the entire flow.
 
 ### 🟡 Priority 3 — Medium (gaps worth addressing)
