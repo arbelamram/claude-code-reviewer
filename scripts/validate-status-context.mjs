@@ -3,12 +3,16 @@
  * hardcoded occurrence in the YAML workflow files that cannot import TypeScript.
  * Exits with code 1 on any mismatch so the build fails fast.
  */
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { join, dirname } from 'path';
 
 // Resolve from this script's location so the script works regardless of cwd
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+if (!existsSync(join(root, 'package.json'))) {
+  console.error(`❌ Unexpected project root: ${root} — no package.json found`);
+  process.exit(1);
+}
 
 const constantsSource = readFileSync(join(root, 'src/constants.ts'), 'utf-8');
 // Single-quote-only extraction matches the constraint documented in src/constants.ts.
