@@ -27,6 +27,7 @@
 - ✅ fix/status-context-validation — `scripts/validate-status-context.mjs` added; prebuild hook gates every build; 9 revision cycles against GitHub Actions reviewer until EXCELLENT with no medium/high issues; two-gate review process documented in CLAUDE.md
 - ✅ fix/remove-node-fetch — `node-fetch` v2 and `@types/node-fetch` removed; native Node 22 `fetch` global used in `claude-service.ts`; dead import removed from `github-service.ts`; `as any` cast on `AbortSignal` dropped; 25 packages pruned from tree
 - ✅ fix/claude-total-timeout — `totalTimeoutMs = 180s` global cap added to `analyzeCode()`; `globalDeadline` checked before each attempt; per-attempt `AbortController` timeout trimmed to remaining budget so no attempt can overshoot
+- ✅ docs/fix-rule-count-readme — README rule count corrected from 43 → 53 (language-specific rules were not tallied); both occurrences updated
 
 ---
 
