@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 import fetch from 'node-fetch';
+import { STATUS_CONTEXT } from '../../constants.js';
 
 interface PRDiff {
   fileName: string;
@@ -221,7 +222,7 @@ class GitHubService {
     sha: string,
     state: 'pending' | 'success' | 'failure' | 'error',
     description: string,
-    context: string = 'code-review/issues'
+    context: string = STATUS_CONTEXT
   ): Promise<void> {
     try {
       await this.octokit.repos.createCommitStatus({

@@ -41,7 +41,7 @@ jobs:
               sha: context.payload.pull_request.head.sha,
               state: 'pending',
               description: 'Code review in progress...',
-              context: 'code-review/issues',
+              context: 'code-review/issues', // source of truth: src/constants.ts STATUS_CONTEXT
             });
 
       - name: Checkout code reviewer
