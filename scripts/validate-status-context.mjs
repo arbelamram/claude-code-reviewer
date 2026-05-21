@@ -11,15 +11,13 @@ import { join, dirname } from 'path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const constantsSource = readFileSync(join(root, 'src/constants.ts'), 'utf-8');
-// Extracts STATUS_CONTEXT assuming it is a plain string literal with no escape
-// sequences or template expressions — see constraint comment in src/constants.ts.
-// Backreference \1 requires matching open/close quotes to prevent false extraction.
-const match = constantsSource.match(/STATUS_CONTEXT\s*=\s*(['"`])([^'"`]+)\1/);
+// Single-quote-only extraction matches the constraint documented in src/constants.ts.
+const match = constantsSource.match(/STATUS_CONTEXT\s*=\s*'([^']+)'/);
 if (!match) {
   console.error('❌ Could not locate STATUS_CONTEXT in src/constants.ts');
   process.exit(1);
 }
-const expected = match[2];
+const expected = match[1];
 // Escape regex metacharacters so STATUS_CONTEXT is matched literally in YAML files
 const escapedExpected = expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 console.log(`Checking STATUS_CONTEXT = '${expected}'`);
@@ -39,7 +37,7 @@ for (const file of yamlFiles) {
     failed = true;
     continue;
   }
-  const hits = (content.match(new RegExp(`context: '${escapedExpected}'`, 'g')) ?? []).length;
+  const hits = (content.match(new RegExp(`context:\\s*['"]${escapedExpected}['"]`, 'g')) ?? []).length;
   if (hits === 0) {
     console.error(`❌ ${file}: no occurrence of \`context: '${expected}'\` — update to match STATUS_CONTEXT`);
     failed = true;
