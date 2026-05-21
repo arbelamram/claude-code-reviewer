@@ -20,6 +20,8 @@ interface ClaudeMessage {
     private model: string = 'claude-opus-4-6';
     private maxRetries: number = 3;
     private requestTimeoutMs: number = 60000;
+    // Hard cap across all attempts + backoff; prevents silent 6-hour GH Actions hang
+    private totalTimeoutMs: number = 180000;
 
     constructor(apiKey: string) {
       if (!apiKey) {
@@ -56,14 +58,21 @@ interface ClaudeMessage {
      * Send a prompt to Claude and get analysis with retry logic
      */
     async analyzeCode(prompt: string): Promise<string> {
+      const globalDeadline = Date.now() + this.totalTimeoutMs;
       let lastError: Error | null = null;
 
       for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+        const remaining = globalDeadline - Date.now();
+        if (remaining <= 0) {
+          throw new Error(`Claude API global timeout exceeded (${this.totalTimeoutMs / 1000}s)`);
+        }
+
         try {
           console.log(`🔌 Connecting to Claude API${attempt > 0 ? ` (attempt ${attempt + 1}/${this.maxRetries})` : ''}...`);
 
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+          const attemptTimeout = Math.min(this.requestTimeoutMs, remaining);
+          const timeoutId = setTimeout(() => controller.abort(), attemptTimeout);
 
           try {
             const response = await fetch(this.apiUrl, {
