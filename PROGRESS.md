@@ -26,6 +26,7 @@
 - ✅ fix/status-context-constant — `STATUS_CONTEXT` extracted to `src/constants.ts`; imported in `github-service.ts`; source-of-truth comments added to both YAML workflow files
 - ✅ fix/status-context-validation — `scripts/validate-status-context.mjs` added; prebuild hook gates every build; 9 revision cycles against GitHub Actions reviewer until EXCELLENT with no medium/high issues; two-gate review process documented in CLAUDE.md
 - ✅ fix/remove-node-fetch — `node-fetch` v2 and `@types/node-fetch` removed; native Node 22 `fetch` global used in `claude-service.ts`; dead import removed from `github-service.ts`; `as any` cast on `AbortSignal` dropped; 25 packages pruned from tree
+- ✅ fix/claude-total-timeout — `totalTimeoutMs = 180s` global cap added to `analyzeCode()`; `globalDeadline` checked before each attempt; per-attempt `AbortController` timeout trimmed to remaining budget so no attempt can overshoot
 
 ---
 
@@ -42,7 +43,6 @@
 - [x] **fix/version-sync** — `package.json` version synced to `1.3.0`; description, author, keywords, license all updated.
 ### 🟡 Priority 3 — Medium (gaps worth addressing)
 
-- [ ] **fix/claude-total-timeout** — `claude-service.ts` sets 60s timeout per attempt but with 3 retries total could take 3+ minutes. Add a global timeout cap across all attempts.
 - [ ] **fix/severity-thresholds** — `standards.yaml` defines `severity_thresholds: high: 10, medium: 20` but orchestrator never reads them. Currently any single issue blocks. Implement or remove the config.
 - [ ] **fix/npm-test-script** — Test files exist in `src/tests/` but no `npm test` command in `package.json`. CI has no automated test step.
 
