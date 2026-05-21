@@ -141,33 +141,41 @@ class GitHubService {
         pull_number: options.prNumber,
       });
 
-      const commitSha = pr.head.sha;
-      let successCount = 0;
-      let failureCount = 0;
-
-      for (const comment of options.comments) {
-        try {
-          await this.octokit.pulls.createReviewComment({
-            owner: options.owner,
-            repo: options.repo,
-            pull_number: options.prNumber,
-            commit_id: commitSha,
-            path: comment.path,
-            line: comment.line,
-            body: comment.body,
-          });
-          successCount++;
-        } catch (error) {
-          console.warn(`⚠️  Failed to post comment on ${comment.path}:${comment.line}`);
-          failureCount++;
+      try {
+        await this.octokit.pulls.createReview({
+          owner:       options.owner,
+          repo:        options.repo,
+          pull_number: options.prNumber,
+          commit_id:   pr.head.sha,
+          event:       'COMMENT',
+          comments:    options.comments.map(c => ({
+            path: c.path,
+            line: c.line,
+            body: c.body,
+          })),
+        });
+        console.log(`✅ Posted ${options.comments.length} inline comment(s) to PR #${options.prNumber}`);
+      } catch (batchError) {
+        // createReview is all-or-nothing; fall back to per-comment to preserve partial results
+        console.warn(`⚠️  Batch review failed — falling back to per-comment posting: ${batchError instanceof Error ? batchError.message : String(batchError)}`);
+        let posted = 0;
+        for (const comment of options.comments) {
+          try {
+            await this.octokit.pulls.createReviewComment({
+              owner:       options.owner,
+              repo:        options.repo,
+              pull_number: options.prNumber,
+              commit_id:   pr.head.sha,
+              path:        comment.path,
+              line:        comment.line,
+              body:        comment.body,
+            });
+            posted++;
+          } catch {
+            console.warn(`⚠️  Skipped comment on ${comment.path}:${comment.line}`);
+          }
         }
-      }
-
-      if (successCount > 0) {
-        console.log(`✅ Posted ${successCount} inline comment(s) to PR #${options.prNumber}`);
-      }
-      if (failureCount > 0) {
-        console.warn(`⚠️  Failed to post ${failureCount} inline comment(s)`);
+        console.log(`✅ Posted ${posted}/${options.comments.length} inline comment(s) via fallback`);
       }
     } catch (error) {
       console.error('Error posting PR review comments:', error);
