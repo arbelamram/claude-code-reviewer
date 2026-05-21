@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 interface ClaudeMessage {
     role: 'user' | 'assistant';
     content: string;
@@ -85,7 +83,7 @@ interface ClaudeMessage {
                   },
                 ],
               }),
-              signal: controller.signal as any,
+              signal: controller.signal,
             });
 
             clearTimeout(timeoutId);

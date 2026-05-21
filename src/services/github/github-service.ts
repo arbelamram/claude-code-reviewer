@@ -1,5 +1,4 @@
 import { Octokit } from '@octokit/rest';
-import fetch from 'node-fetch';
 import { STATUS_CONTEXT } from '../../constants.js';
 
 interface PRDiff {
