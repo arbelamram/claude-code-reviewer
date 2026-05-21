@@ -19,6 +19,8 @@
 - ✅ docs/license-and-readme — LICENSE file added; README rewritten with badges, ToC, Design Decisions
 - ✅ fix/file-type-filtering — Non-code files excluded from review via configurable exclude_paths in standards.yaml; trySetCommitStatus helper extracted; PR comment posted when all files excluded
 - ✅ fix/prompt-false-positives — 4 prompt rules added to suppress missing-import noise, acknowledged-tradeoff re-flagging, metadata/badge complaints, and library-swap opinions; NO_OP_PATTERNS expanded with Class 3 filter
+- ✅ fix/standards-engine-bool-rules — Boolean-format rules (`rule: true`) now included via `getRuleName()` + `METADATA_KEYS` exclusion set; `enabled: false` on individual rules respected
+- ✅ fix/language-rules-unused — Language-specific rules (JS/TS/Python) now appended to prompt in `getEnabledRulesAsText()` second loop; `countEnabledRules()` updated to match
 
 ---
 
@@ -29,11 +31,6 @@
 ---
 
 ## 🔧 Improvements Backlog (priority ordered)
-
-### 🔴 Priority 1 — Critical (correctness bugs)
-
-- [ ] **fix/standards-engine-bool-rules** — `standards-engine.ts` skips all boolean-format rules (`rule: true`) because it checks `typeof ruleData === 'object'`. Likely ~50% of standards.yaml rules are silently ignored. Fix: handle boolean rules explicitly. File: `src/services/standards-engine.ts` lines 72–127.
-- [ ] **fix/language-rules-unused** — Language-specific rules (JS/TS/Python, 13+ rules) in `standards.yaml` are loaded but never included in the prompt. `getEnabledRulesAsText()` iterates only the 4 main categories. Fix: add language rules iteration. File: `src/services/standards-engine.ts`.
 
 ### 🟠 Priority 2 — High (reliability & maintainability)
 
