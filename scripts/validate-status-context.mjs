@@ -5,7 +5,7 @@
  */
 import { existsSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { join, dirname } from 'path';
+import { join, dirname, sep } from 'path';
 
 // Resolve from this script's location so the script works regardless of cwd
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,13 +30,20 @@ if (/['"]/.test(expected)) {
 const escapedExpected = expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 console.log(`Checking STATUS_CONTEXT = '${expected}'`);
 
-const yamlFiles = [
-  join(root, '.github/workflows/code-review.yml'),
-  join(root, '.github/workflows/resolve-check.yml'),
+const yamlRelPaths = [
+  '.github/workflows/code-review.yml',
+  '.github/workflows/resolve-check.yml',
 ];
 
+const rootPrefix = root.endsWith(sep) ? root : root + sep;
+
 let failed = false;
-for (const file of yamlFiles) {
+for (const rel of yamlRelPaths) {
+  const file = join(root, rel);
+  if (!file.startsWith(rootPrefix)) {
+    console.error(`❌ Resolved path escapes project root: ${file}`);
+    process.exit(1);
+  }
   let content;
   try {
     content = readFileSync(file, 'utf-8');
