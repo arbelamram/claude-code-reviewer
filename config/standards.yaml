@@ -267,9 +267,5 @@ languages:
 
 # Global configuration
 global:
-  severity_thresholds:
-    high: 10    # Number of high severity issues before failing review
-    medium: 20  # Number of medium severity issues before failing review
-  
   suppress_rules: []  # Rules to temporarily disable
   custom_rules: []    # Space for team-specific rules
