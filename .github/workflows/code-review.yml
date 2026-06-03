@@ -21,7 +21,7 @@ on:
 
 jobs:
   code-review:
-    if: contains(vars.ALLOWED_REVIEWERS, github.event.pull_request.user.login) || github.event_name == 'workflow_dispatch'
+    if: github.event.pull_request.user.login == vars.ALLOWED_REVIEWERS || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     permissions:
