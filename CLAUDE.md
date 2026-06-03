@@ -19,7 +19,9 @@ Push the branch, open a PR, and merge via the PR merge gate below. Direct commit
 **THERE ARE TWO MANDATORY REVIEW GATES. BOTH MUST BE CLEAN BEFORE MERGING.**
 
 ### Gate 1 — Pre-push: `/review` skill on local diff
-Run the `/review` skill before every `git push`. If it finds any medium or high severity issue, fix it and re-run until clean. Do NOT push with known medium/high issues.
+Run `/review <PR_NUMBER>` before every `git push`. This reviews the full PR diff as GitHub will see it — catching issues before Gate 2 runs, avoiding wasted round-trips through GitHub Actions. If it finds any medium or high severity issue, fix it and re-run until clean. Do NOT push with known medium/high issues.
+
+**Why this matters:** Gate 2 reviews the same diff but only after a push triggers a GitHub Actions run. Every unresolved finding costs a push + wait cycle. Running Gate 1 first eliminates that waste.
 
 ### Gate 2 — Post-push: GitHub Actions code reviewer on the live PR
 After pushing and opening a PR, the GitHub Actions workflow posts a review comment on the PR. **Wait for it and read it before merging.** If it finds any medium or high severity issue:
