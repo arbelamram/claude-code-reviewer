@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⛔ HARD RULE — NEVER WORK DIRECTLY ON MAIN
+
+Every fix, feature, or doc change must be done on a dedicated branch. Create the branch before making any edits:
+
+```bash
+git checkout -b fix/<issue-name>   # e.g. fix/severity-thresholds
+git checkout -b feat/<feature>
+git checkout -b docs/<topic>
+```
+
+Push the branch, open a PR, and merge via the PR merge gate below. Direct commits to `main` are not allowed.
+
 ## ⛔ HARD RULE — PR MERGE GATE
 
 **THERE ARE TWO MANDATORY REVIEW GATES. BOTH MUST BE CLEAN BEFORE MERGING.**
