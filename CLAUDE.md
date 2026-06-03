@@ -14,21 +14,34 @@ git checkout -b docs/<topic>
 
 Push the branch, open a PR, and merge via the PR merge gate below. Direct commits to `main` are not allowed.
 
+## ⛔ HARD RULE — RUN `/review` BEFORE EVERY PUSH
+
+**Never push to a PR branch without first running `/review <PR_NUMBER>` locally and confirming zero medium or high severity issues.**
+
+Steps — in this exact order, no skipping:
+1. Make your changes locally
+2. Run `/review <PR_NUMBER>` — this reviews the full PR diff exactly as Gate 2 will see it
+3. If it finds **any medium or high severity issue**: fix it, then go back to step 2
+4. Only push once Gate 1 returns clean (no medium/high findings)
+
+**Violations of this rule directly cause wasted GitHub Actions runs, extra push/wait cycles, and unnecessary token spend on Gate 2.** Every Gate 2 finding that Gate 1 could have caught is a process failure.
+
 ## ⛔ HARD RULE — PR MERGE GATE
 
 **THERE ARE TWO MANDATORY REVIEW GATES. BOTH MUST BE CLEAN BEFORE MERGING.**
 
 ### Gate 1 — Pre-push: `/review` skill on local diff
-Run `/review <PR_NUMBER>` before every `git push`. This reviews the full PR diff as GitHub will see it — catching issues before Gate 2 runs, avoiding wasted round-trips through GitHub Actions. If it finds any medium or high severity issue, fix it and re-run until clean. Do NOT push with known medium/high issues.
+Run `/review <PR_NUMBER>` before every `git push` (see hard rule above).
 
-**Why this matters:** Gate 2 reviews the same diff but only after a push triggers a GitHub Actions run. Every unresolved finding costs a push + wait cycle. Running Gate 1 first eliminates that waste.
+### Gate 2 — Post-push: GitHub Actions code reviewer on the live PR
 
 ### Gate 2 — Post-push: GitHub Actions code reviewer on the live PR
 After pushing and opening a PR, the GitHub Actions workflow posts a review comment on the PR. **Wait for it and read it before merging.** If it finds any medium or high severity issue:
 1. Fix the issue on the branch
-2. Push the fix
-3. Wait for the GitHub Actions review to re-run
-4. Repeat until the GitHub Actions review is also clean
+2. Run `/review <PR_NUMBER>` locally (Gate 1) — must be clean before pushing
+3. Push the fix
+4. Wait for the GitHub Actions review to re-run
+5. Repeat until Gate 2 is also clean
 Then merge.
 
 **Checking only Gate 1 and ignoring Gate 2 is a violation of this rule.**
