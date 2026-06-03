@@ -231,15 +231,24 @@ npm run build
 
 ### Configuration
 
-#### GitHub Secret
+#### GitHub Secret & Variable
 
 Go to **Settings → Secrets and variables → Actions** and add:
 
-| Secret | Value |
-|--------|-------|
+**Secret:**
+
+| Name | Value |
+|------|-------|
 | `CLAUDE_API_KEY` | Anthropic API key (`sk-ant-...`) |
 
+**Repository variable:**
+
+| Name | Value | Description |
+|------|-------|-------------|
+| `ALLOWED_REVIEWERS` | `["your-github-username"]` | JSON array of GitHub usernames whose PRs trigger the review. Example: `["alice"]` or `["alice","bob"]` |
+
 > GitHub API access uses the built-in `github.token` — no personal access token required.
+> If `ALLOWED_REVIEWERS` is unset or empty the workflow skips silently — set it before opening your first PR.
 
 #### Branch Protection
 
@@ -325,17 +334,13 @@ Edit `config/standards.yaml` to adjust which rules are active and at what severi
 
 ## Known Limitations & Future Improvements
 
-- Language-specific rules (TypeScript `check_any_usage`, JavaScript `check_promise_handling`, etc.) are defined in `standards.yaml` but not yet included in the analysis prompt
-- Boolean-format rules (`rule_name: true`) in `standards.yaml` are currently skipped by the standards engine
-- Inline comments are posted sequentially rather than batched into a single GitHub review API call
 - Token estimation uses a 4 chars/token heuristic — actual counts vary by content
 - No native test command (`npm test`) — test files exist but are not wired to a test runner
+- `severity_thresholds` config in `standards.yaml` is defined but not yet read by the orchestrator — any single medium/high finding blocks the PR regardless of the configured threshold
 
 Planned enhancements:
 
-- Fix standards engine to handle boolean rules and language-specific rules
-- Add job-level timeout to prevent 6-hour hangs if Claude API is unresponsive
-- Batch inline comments into a single review API call
+- Implement `severity_thresholds` so the block threshold is configurable per severity
 - Add Jest/Vitest unit tests and a `npm test` script
 - Dashboard for review history and metrics
 - Slack/email notifications on review completion
