@@ -59,13 +59,15 @@ Ignoring this rule is a critical failure regardless of how minor the issues seem
 ```bash
 npm run build                    # Compile TypeScript to dist/
 npm run dev                      # Run main entry point with ts-node
-npm run cli                      # Run CLI (alias: npm run review)
+npm run cli                      # Run CLI via ts-node (dev mode; runs src/cli.ts directly)
+npm run review                   # Run CLI from compiled output (dist/cli.js)
 
 # Manual review with environment variables
 GITHUB_OWNER=user GITHUB_REPO=repo PR_NUMBER=1 npm run review
 
 # Run tests
 npx ts-node src/tests/test-orchestrator-full.ts
+npx ts-node src/tests/test-orchestrator.ts
 npx ts-node src/tests/test-claude-service.ts
 npx ts-node src/tests/test-github-service.ts
 ```
@@ -77,38 +79,40 @@ The system follows a clear separation of concerns pattern:
 ### Core Workflow (Orchestrator)
 
 `src/orchestrator.ts:CodeReviewOrchestrator` is the main coordinator:
-1. Immediately sets `code-review/issues` commit status to `failure` ("Code review in progress…")
+1. Immediately sets `code-review/issues` commit status to `pending` ("Code review in progress…")
 2. Loads coding standards from YAML
 3. Fetches PR context and diffs from GitHub (including head SHA)
-4. Annotates each diff line with its actual file line number (`annotatePatchLines`)
-5. Builds analysis prompt (annotated code + standards rules)
-6. Sends to Claude API
-7. Parses Claude's JSON response
-8. Posts inline review comments on specific diff lines (`postPRReview`)
-9. Posts summary comment (`postPRComment`)
-10. Creates GitHub issues for high/medium severity findings (`createIssuesForProblems`)
-11. Sets commit status to `failure` with issue count, or `success` if no blocking issues
+4. Filters files against `exclude_paths` patterns from `standards.yaml` (`compileExcludePatterns` / `isExcluded`)
+5. Annotates each diff line with its actual file line number (`annotatePatchLines`)
+6. Builds analysis prompt (annotated code + standards rules)
+7. Sends to Claude API via `ClaudeService.analyzeCode()`
+8. Parses Claude's JSON response
+9. Posts inline review comments on specific diff lines (via `GitHubService.postPRReview`)
+10. Posts summary comment (`postPRComment`)
+11. Creates GitHub issues for high/medium severity findings (`createIssuesForProblems`)
+12. Sets commit status to `failure` with issue count, or `success` if no blocking issues
 
 A second workflow (`resolve-check.yml`) watches for issue-close events and flips the status to `success` when all code-review issues for the PR are resolved.
 
 ### Key Components
 
-- **StandardsEngine** (`src/services/standards-engine.ts`): Loads `config/standards.yaml`, validates rules, builds the prompt context with standards and line-number format instructions
-- **ClaudeService** (`src/services/claude-service.ts`): Raw Claude API client (v1/messages endpoint), handles authentication and model selection (Opus 4.6), retry logic, timeouts
-- **GitHubService** (`src/services/github/github-service.ts`): Octokit wrapper — PR context (including `headSha`), file diffs, inline review comments (`postPRReview`), PR comments, issue creation (`createIssue`), commit status (`setCommitStatus`)
+- **StandardsEngine** (`src/services/standards-engine.ts`): Loads `config/standards.yaml`, validates rules, builds the prompt context with standards and line-number format instructions; `getExcludePaths()` exposes the configured glob patterns for the orchestrator's file filter
+- **ClaudeService** (`src/services/claude-service.ts`): Raw Claude API client (v1/messages endpoint), handles authentication and model selection (Opus 4.6), retry logic (up to 3 attempts), 60-second per-request timeout, and a 180-second global deadline via `totalTimeoutMs`
+- **GitHubService** (`src/services/github/github-service.ts`): Octokit wrapper — PR context (including `headSha`), file diffs, inline review comments (`postPRReview` — falls back to individual comment calls if the batch `createReview` is rejected), PR comments, issue creation (`createIssue`), commit status (`setCommitStatus`)
 - **AnalysisFormatter** (`src/formatters/analysis-formatter.ts`): Parses Claude's JSON response, converts issues to inline `ReviewComment` objects via `convertToReviewComments`, formats summary as markdown
 - **CLI** (`src/cli.ts`): Entry point for manual reviews; validates environment variables (GITHUB_OWNER, GITHUB_REPO, PR_NUMBER, CLAUDE_API_KEY)
 
 ### Data Flow
 
 ```
-PR opened → commit status: failure ("in progress")
-standards.yaml → StandardsEngine (build prompt with rules)
+PR opened → commit status: pending ("in progress")
+standards.yaml → StandardsEngine (build prompt with rules + load exclude_paths)
 GitHub PR → GitHubService (fetch diffs + headSha)
-Diffs → annotatePatchLines (add L<n> prefix to each line)
-Annotated code + Rules → Claude API → JSON response
+Diffs → exclude_paths filter (compileExcludePatterns / isExcluded)
+Filtered diffs → annotatePatchLines (add L<n> prefix to each line)
+Annotated code + Rules → ClaudeService.analyzeCode() → JSON response
 JSON → AnalysisFormatter → inline ReviewComments + summary markdown
-ReviewComments → GitHubService.postPRReview (inline diff comments)
+ReviewComments → GitHubService.postPRReview (inline diff comments; per-comment fallback on batch failure)
 Summary → GitHubService.postPRComment
 High/medium issues → GitHubService.createIssue (GitHub issues)
 Issues created → commit status: failure (N issues)
@@ -120,21 +124,27 @@ Issue closed → resolve-check.yml → recount → success or failure
 
 ### Coding Standards (`config/standards.yaml`)
 
-The standards file defines 43 rules across 4 categories (security, performance, style, best-practices) plus language-specific rules. Each rule has:
+The standards file defines 53 rules: 14 security, 8 performance, 9 style, 12 best-practices, plus 10 language-specific rules across JavaScript, TypeScript, and Python. Each rule has:
 - `enabled`: boolean to activate/deactivate
 - `severity`: high/medium/low (affects weighting in Claude's analysis)
 - `description`: what the rule checks
 - `config`: optional rule-specific settings (e.g., max function length)
+
+The file also contains a `review_config.exclude_paths` block (13 glob patterns) that controls which file types are skipped before Claude sees them (e.g. `**/*.md`, `**/*.lock`, `dist/**`).
 
 To customize for your project, edit `config/standards.yaml` and set `enabled: true/false` for specific rules. The StandardsEngine includes all enabled rules in the prompt sent to Claude.
 
 ### Environment Variables
 
 - `CLAUDE_API_KEY`: Required; authenticates with Claude API
-- `GITHUB_TOKEN`: Required; GitHub API authentication (via GitHubConfigManager)
+- `GITHUB_TOKEN`: CLI only; GitHub personal access token (in GitHub Actions, the built-in `github.token` is used automatically via `GitHubConfigManager`)
 - `GITHUB_OWNER`: Repository owner (used in CLI or GitHub Actions)
 - `GITHUB_REPO`: Repository name (used in CLI or GitHub Actions)
 - `PR_NUMBER`: PR number to review (used in CLI)
+- `ENABLE_ISSUE_CREATION`: Optional; set `true` to create GitHub issues for findings (default `false`)
+- `LOG_LEVEL`: Optional; verbosity control — `DEBUG`, `INFO`, `WARN`, `ERROR` (default `INFO`)
+- `MAX_PROMPT_TOKENS`: Optional; overrides the 150k hard token ceiling for prompt truncation
+- `TARGET_PROMPT_TOKENS`: Optional; overrides the 100k target token count for prompt truncation
 
 See `.env.example` for the template. In GitHub Actions, these are configured as repository secrets.
 
@@ -164,7 +174,7 @@ GITHUB_OWNER=arbelamram GITHUB_REPO=claude-code-reviewer PR_NUMBER=1 npm run cli
 
 ### Debugging Claude's Response
 
-In `orchestrator.ts:callClaudeAPI()`, the raw Claude response is logged. Add console logs to see:
+In `orchestrator.ts`, the raw Claude response is logged inside `analyzeCode()` after calling `this.claudeService.analyzeCode(prompt)`. Add console logs to see:
 - Prompt sent to Claude (very long; check its structure)
 - Raw API response before AnalysisFormatter parses it
 - Parsed JSON after extraction
@@ -209,7 +219,7 @@ This project uses ES modules (`"type": "module"` in package.json). All imports m
 
 ### GitHub API Token Source
 
-`GitHubConfigManager.getToken()` reads from `GITHUB_TOKEN` environment variable. In GitHub Actions, this is injected via secrets; locally, use `.env`.
+`GitHubConfigManager.getToken()` reads from `GITHUB_TOKEN` environment variable. In GitHub Actions, the workflow passes the built-in `github.token` as this variable — no personal access token or secret is required. For local CLI runs, set it in `.env`.
 
 ### Claude Model
 
@@ -220,6 +230,7 @@ Currently hardcoded to `claude-opus-4-6` in `ClaudeService`. For faster testing,
 Tests use simple mocking patterns:
 - `test-claude-service.ts`: Mocks HTTP responses without external requests
 - `test-github-service.ts`: Tests GitHub API wrapper with mocked Octokit
+- `test-orchestrator.ts`: Lightweight orchestrator unit tests
 - `test-orchestrator-full.ts`: End-to-end with both mocked services
 
 Run individually with `npx ts-node src/tests/<file>`.
@@ -231,7 +242,7 @@ Run individually with `npx ts-node src/tests/<file>`.
 Two workflows work together:
 
 **`code-review.yml`** (triggers on `pull_request: [opened, synchronize, reopened]`):
-1. Immediately sets `code-review/issues` to `failure` ("Code review in progress…")
+1. Immediately sets `code-review/issues` to `pending` ("Code review in progress…")
 2. Checkout, npm install, build
 3. Run `npm run review` — orchestrator runs the full review
 4. Permissions required: `pull-requests: write`, `contents: read`, `issues: write`, `statuses: write`
@@ -247,7 +258,7 @@ Add `code-review/issues` as a required status check in the repo's branch protect
 
 ### Manual Deployment to Other Projects
 
-Copy both `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo's `.github/workflows/`, add `GH_TOKEN` and `CLAUDE_API_KEY` secrets, and customize `config/standards.yaml`.
+Copy both `.github/workflows/code-review.yml` and `.github/workflows/resolve-check.yml` to the target repo's `.github/workflows/`, add `CLAUDE_API_KEY` as a repository secret, and customize `config/standards.yaml`. No personal access token is required — the workflows use the built-in `github.token`.
 
 ## Potential Pain Points
 
