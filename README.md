@@ -53,9 +53,9 @@ Pull Request
      ▼
 code-review.yml
      │
-     ├── Standards YAML → StandardsEngine → Prompt
+     ├── Standards YAML → StandardsEngine → Prompt + exclude_paths
      │
-     ├── GitHub Diff → annotatePatchLines → Annotated Code
+     ├── GitHub Diff → exclude_paths filter → annotatePatchLines → Annotated Code
      │
      └── Prompt + Code → Claude API → JSON Response
                                             │
@@ -112,18 +112,21 @@ PR opened / new commit pushed
        │
        ├─ 2. Fetch PR context and diffs from GitHub
        │
-       ├─ 3. Annotate each diff line with its actual file line number
+       ├─ 3. Filter files against exclude_paths patterns from standards.yaml
+       │      (non-code files, lock files, dist/ etc. are skipped)
+       │
+       ├─ 4. Annotate each diff line with its actual file line number
        │      so Claude reports the exact offending statement
        │
-       ├─ 4. Build analysis prompt (annotated code + 53 standards rules)
+       ├─ 5. Build analysis prompt (annotated code + 53 standards rules)
        │
-       ├─ 5. Send to Claude Opus 4.6
+       ├─ 6. Send to Claude Opus 4.6
        │
-       ├─ 6. Post inline review comments on specific lines
+       ├─ 7. Post inline review comments on specific lines
        │
-       ├─ 7. Post severity-grouped summary comment on the PR
+       ├─ 8. Post severity-grouped summary comment on the PR
        │
-       └─ 8. For each high/medium severity issue:
+       └─ 9. For each high/medium severity issue:
               ├─ Create a GitHub issue (labelled code-review + priority)
               ├─ Set status → FAILURE  "N issue(s) to resolve"
               └─ If zero issues → set status → SUCCESS  ← merge enabled
@@ -176,7 +179,7 @@ All errors shown to users pass through `safeErrorMessage()`, which maps specific
 ### Reliability
 - Exponential backoff with up to 3 retries for transient API failures
 - `Retry-After` header respected for GitHub rate limit responses
-- 30-second per-request timeout on Claude API calls
+- 60-second per-request timeout on Claude API calls, with a 180-second global deadline per review
 - Intelligent prompt truncation for PRs exceeding 100k tokens
 - JSON schema validation on Claude's response before any processing
 - `::error::` annotation emitted if a commit status update fails silently
@@ -277,6 +280,8 @@ cp .env.example .env
 | `PR_NUMBER` | Yes | — | PR number to review |
 | `ENABLE_ISSUE_CREATION` | No | `false` | Set `true` to create GitHub issues for findings |
 | `LOG_LEVEL` | No | `INFO` | Verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` |
+| `MAX_PROMPT_TOKENS` | No | `150000` | Hard token ceiling for prompt truncation |
+| `TARGET_PROMPT_TOKENS` | No | `100000` | Target token count before truncation begins |
 
 ⚠️ Do not commit `.env` files — they are excluded via `.gitignore`.
 
@@ -336,11 +341,9 @@ Edit `config/standards.yaml` to adjust which rules are active and at what severi
 
 - Token estimation uses a 4 chars/token heuristic — actual counts vary by content
 - No native test command (`npm test`) — test files exist but are not wired to a test runner
-- `severity_thresholds` config in `standards.yaml` is defined but not yet read by the orchestrator — any single medium/high finding blocks the PR regardless of the configured threshold
 
 Planned enhancements:
 
-- Implement `severity_thresholds` so the block threshold is configurable per severity
 - Add Jest/Vitest unit tests and a `npm test` script
 - Dashboard for review history and metrics
 - Slack/email notifications on review completion

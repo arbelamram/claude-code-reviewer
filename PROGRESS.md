@@ -1,8 +1,14 @@
 # Claude Code Reviewer — Progress Tracker
 
-**Version:** 1.3.0 | **Updated:** May 21, 2026
+**Version:** 1.3.0 | **Updated:** Jun 3, 2026
 
 ---
+
+## ✅ Completed (Jun 3, 2026)
+
+- ✅ fix/owner-only-review (#173) — Restrict code review to repo owner via `ALLOWED_REVIEWERS` variable; add branch-per-fix and Gate 1 rules to CLAUDE.md
+- ✅ docs/readme-deployment-fix (#174) — Document `ALLOWED_REVIEWERS` setup; remove 4 stale Known Limitations entries resolved in v1.3.0
+- ✅ fix/severity-thresholds (#175) — Remove dead `severity_thresholds` config; sharpen Gate 1 rule in CLAUDE.md
 
 ## ✅ Completed (v1.3.0)
 
@@ -42,9 +48,11 @@
 ### 🟠 Priority 2 — High (reliability & maintainability)
 
 - [x] **fix/version-sync** — `package.json` version synced to `1.3.0`; description, author, keywords, license all updated.
+
 ### 🟡 Priority 3 — Medium (gaps worth addressing)
 
-- [ ] **fix/severity-thresholds** — `standards.yaml` defines `severity_thresholds: high: 10, medium: 20` but orchestrator never reads them. Currently any single issue blocks. Implement or remove the config.
+- ✅ **fix/severity-thresholds** (#175) — Removed dead `severity_thresholds` config from `standards.yaml`; also sharpened Gate 1 `/review` rule in CLAUDE.md to standalone ⛔ hard rule. Gate 2 false positive on dead config removal — merged with explicit user auth.
+- [ ] **fix/reviewer-false-positive-dead-config** — Gate 2 reviewer flags removal of unimplemented config keys as "eliminating a quality gate." Needs a prompt rule: *do not flag config key removal as a regression unless the key is demonstrably read by the implementation*. Observed on PR #175.
 - [ ] **fix/npm-test-script** — Test files exist in `src/tests/` but no `npm test` command in `package.json`. CI has no automated test step.
 
 ### 🟢 Priority 4 — Low (polish)
@@ -52,7 +60,7 @@
 - [ ] **fix/status-description-length** — GitHub caps status descriptions at 140 characters. `github-service.ts` doesn't validate or truncate before sending.
 - [ ] **fix/cli-pr-number-validation** — `cli.ts` parses `PR_NUMBER` env var with `parseInt` but doesn't guard against NaN before passing to orchestrator.
 - [ ] **fix/package-metadata** — `package.json` missing `description`, `author`, `repository` fields.
-- [ ] **docs/env-vars-readme** — `ENABLE_ISSUE_CREATION`, `LOG_LEVEL`, token env vars not documented in README setup section.
+- [x] **docs/env-vars-readme** — `ALLOWED_REVIEWERS` documented in README (#174); all other env vars already covered.
 
 ---
 
